@@ -7,4 +7,5 @@ dist/
 coverage/
 playwright-report/
 test-results/
+.local-backups/
 .DS_Store

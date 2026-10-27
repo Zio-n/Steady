@@ -1,7 +1,8 @@
 # Steady product reset and semi-rebuild implementation plan
 
 **Prepared:** 27 October 2026  
-**Status:** Implementation plan; no reset or rebuild has been executed  
+**Status:** Gate R0 complete; R1 data-contract work next. See [reset execution log](reset-execution-log.md).
+
 **Purpose:** Give a future implementation pass an ordered, testable route from the current routine-centred prototype to the current calendar-first product. The first delivery checkpoint is a safe, runnable reset baseline; the later checkpoints build the new product on it.
 
 ## 1. Decision basis and scope precedence
@@ -24,7 +25,7 @@ No default weekly routine, Shuffle, automatic calorie carry/debt, AI nutrition l
 
 ## 2. Current product audit (source inspection, 27 October)
 
-This is a static source audit, not a live-user, production-data, or deployed-UX audit. Git metadata was removed from this project at the user's request on 27 October, so there is **no in-project commit history or configured remote**. Do not assume Git can restore anything until a reviewed baseline is created. `.env.local` exists and is excluded by `.gitignore`; its contents were not inspected or copied.
+This is a static source audit, not a production or deployed-UX audit. Git metadata was previously removed at the user's request, then the project was reinitialised and pushed to `Zio-n/Steady`. Execution now has a baseline commit, tag and isolated branch, recorded in the [reset execution log](reset-execution-log.md). `.env.local` is excluded by `.gitignore`; its secret values were not inspected or copied into this document.
 
 | Area | What exists | Decision and reason |
 | --- | --- | --- |
@@ -42,7 +43,7 @@ This is a static source audit, not a live-user, production-data, or deployed-UX 
 
 ### Structural risks to resolve early
 
-- A source reset cannot be safely undone from the current Git history because no baseline commit exists.
+- The baseline commit and tag now make source changes reversible. Database changes still require the separate verified local backup recorded in the execution log.
 - Day creation currently assumes a calorie target and weekly allocation; calculate-only and a lightweight first-meal flow must work without materialising a week. Decide deliberately whether logging requires a target (recommended: no; remaining allowance is unavailable until a target exists).
 - `days.status = completed` and the completed-day correction RPC are tied to the old finish/carry workflow. The new calendar should not ask users to complete a day. Preserve historical completion/snapshot information and provide a correction path that does not create carry decisions.
 - Profile calorie target edits currently take effect next Monday. The replacement target contract must support an explicit effective local date without silently rewriting earlier day snapshots.
