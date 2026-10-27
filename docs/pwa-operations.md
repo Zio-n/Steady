@@ -1,0 +1,31 @@
+# PWA operations and acceptance
+
+This is the Phase 10 operating contract for the local-first *shell*, not an offline-first data store. Public shell assets are precached; authentication, account records, and API responses are not. Steady requires a connection for fresh records and saves.
+
+## Connection and data states
+
+| Situation | Required behavior | Current implementation |
+| --- | --- | --- |
+| Open cold while offline | Shell may open; no invented zero/empty account data; show unavailable/retry. | Reads settle as errors; Today uses an unavailable state when no cached day exists. |
+| Go offline after a successful load | Keep already-rendered values only as last loaded data; do not imply they are current. | Sticky offline banner labels visible data as last loaded while online. |
+| Attempt a write while browser reports offline | Fail promptly, keep any open draft, never queue or replay it. | Mutation guard rejects before its request; mutation network mode never pauses. |
+| Connection returns | Refresh active account queries; no write replay. | Reconnecting banner; refresh failure offers a manual retry. |
+| Request outcome is uncertain | Do not assume failure and blindly create another record. | Feature-specific idempotency/request IDs, revision checks, refresh, and explicit retry flows remain the authority. Custom-nutrient creation reuses its field ID for unchanged retries and checks that exact saved row after an insert error. Verify visible server state before retrying other operations that may have committed. |
+| Sign out while network is unavailable | Clear this device's local session and account query cache, without claiming remote revocation. | Local-scope sign-out verifies session removal after a remote error; auth state change clears private queries. Other devices remain signed in. |
+
+Drafts are only in the live tab's component state. Closing, reloading, or installing a replacement does not preserve them. In-app navigation and tab close warn on the guarded editors, including both Profile target edits and unfinished custom-nutrient/name edits; a pending write also blocks in-app route navigation. Switching Library's Foods/Meals tabs with an editor open requires an explicit discard confirmation, and switching is unavailable during a write. The Today choice picker likewise confirms before switching away from a selected item or edited one-off form; its one-off Library saves reuse the request ID for unchanged retries after an uncertain response. Explicitly closing a choice dialog cancels its draft. The PWA update prompt additionally treats *any* input/change in the tab as an edit latch, so even a saved search requires closing and reopening before applying an update. This errs toward retaining user work but is not a durable draft system.
+
+## Update and deployment contract
+
+1. Apply additive database migrations before publishing code that needs them. Keep old columns, RPC signatures, auth claims, and response shapes valid while an older installed client can still run.
+2. Publish the new app shell and let the service worker offer an update. Never force an immediate reload over unsaved edits or an in-flight mutation. The user may choose **Later**.
+3. Reopen/update a clean tab and verify the new client against the migrated database. Separately verify the *previous* released client against that same database before considering a migration compatible. The latter is **not yet verifiable** because Steady has no hosted previous release.
+4. Roll back application assets independently if necessary. Do not roll back a database migration that would invalidate already-written records or an older/newer client without a tested recovery procedure.
+
+No production deployment has occurred. The old-client/new-database and new-client/new-database compatibility matrix, release rollback, and real service-worker update sequence therefore remain open acceptance items, not claimed passes.
+
+## Device and accessibility acceptance still to perform
+
+Run on at least one real iOS Safari installation and one Android Chrome installation, plus desktop. Test initial install, standalone launch, deep links, tab-to-standalone transitions, keyboard opening over a long form, safe-area insets, offline cold launch, offline after data load, reconnect with failed then successful refresh, an uncertain save, sign-out offline, update **Later** and **Update now**, and recovery after an update error. Use disposable account data for write tests.
+
+Automated checks currently cover core token contrast, public-only precache, local sign-out semantics, offline query settlement, custom-nutrient retry identity, and unchanged-payload request ID reuse for one-off Library saves. Browser checks have covered 320/375/390/430 px and 1024/1440 px layouts without horizontal overflow, plus Library and Profile drafts that remained after choosing **Stay here**. Library's tab list now supports arrow-key selection and focus, exposes a named tab panel, and was checked through **Keep editing** and **Discard and switch** with an unsaved test draft. The Today choice picker and nested one-off tabs were checked with arrow keys and the same two discard choices; a phone-width one-off meal editor fits at 320 px with no horizontal overflow or undersized visible controls. An expanded calorie-allocation preview was also checked at 320, 375, 390, 430 and 620 px; its day/value cells now use two columns below 621 px rather than overlapping seven-day values. A DOM/AX pass found no visible unnamed buttons or form controls on the loaded Today, Library, Routine and Profile base views; expanded dialogs and every state have not been audited. The shared unsaved-navigation dialog was keyboard-checked: focus starts inside, wraps in both Tab directions, and returns to the triggering link after Escape; its title has a unique ID. Fresh and client-side route loads set a page-specific document title and expose a polite route announcement. Keyboard-only navigation and focus behavior for *every* flow, actual screen-reader announcements, 200% zoom, platform-specific installation and update flows, and production contrast across all states still need hands-on verification. A passing token-contrast test is not a full WCAG audit.
