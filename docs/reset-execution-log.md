@@ -2,7 +2,7 @@
 
 **Started:** 27 October 2026  
 **Plan:** [Product reset and semi-rebuild](product-reset-and-semi-rebuild-plan.md)  
-**Current checkpoint:** R0 complete; R1 replacement data contracts next. No rebuild schema or UI changes have been applied.
+**Current checkpoint:** R0 complete; R1 in progress. The first calendar read migration exists on the branch and has been tested only in an isolated restored database. The original database and current UI have not been migrated.
 
 ## R0 — Recoverable baseline
 
@@ -20,7 +20,7 @@ Simply opening Today on 27 October called the old day materialisation path and i
 
 ## R1 entry conditions and next work
 
-1. Define owner/visibility/provenance and write contracts for private foods, catalogue foods, saved meals, dated entries, repeats, explicit transfers, and public recipe versions. Keep history compatible.
-2. Design a new day/target read API that does not create weeks, routine occurrences, or day rows. Logging may work without a target; remaining allowance is shown only when a target exists.
-3. Add forward-only migrations and tests on the isolated restored copy. Compare account isolation and eaten snapshot totals before switching any caller.
-4. Keep the original local database and backup untouched during this design/prototype stage. Before applying a migration to the original, take a fresh backup that includes the additional empty day created by the UI visit.
+1. [Rebuild data contract](rebuild-data-contract.md) records owner/visibility/provenance and the intended date, repeat, transfer and public recipe write rules. This is the R1 design baseline; later slices can refine fields without weakening the invariants.
+2. `20261027140000_calendar_day_read.sql` adds `public.read_calendar_day(date)` as a `STABLE SECURITY INVOKER` function. It reads account-scoped target history, legacy completion snapshots and dated items without calling any `ensure_*` function. It returns `unset` for an account without a target.
+3. `calendar_day_read.test.sql` passed 15 focused pgTAP assertions in `steady_r1_test`, an isolated copy of local app/auth/storage data with existing grants. The test covers target effective dates, empty dates without inserts, legacy completed targets, account isolation, targetless reads and execute permissions. The original local database has **not** received this migration.
+4. Next: add a new explicit-write day helper and plan/log RPCs that do not require `weeks`; test them on the isolated copy. Then switch the client read path and remove routine materialisation from Calendar. Before applying any migration to the original, take a fresh backup that includes the additional empty day created by the UI visit.

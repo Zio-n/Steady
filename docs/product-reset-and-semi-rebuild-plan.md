@@ -1,7 +1,7 @@
 # Steady product reset and semi-rebuild implementation plan
 
 **Prepared:** 27 October 2026  
-**Status:** Gate R0 complete; R1 data-contract work next. See [reset execution log](reset-execution-log.md).
+**Status:** Gate R0 complete; R1 data-contract work in progress. See [reset execution log](reset-execution-log.md).
 
 **Purpose:** Give a future implementation pass an ordered, testable route from the current routine-centred prototype to the current calendar-first product. The first delivery checkpoint is a safe, runnable reset baseline; the later checkpoints build the new product on it.
 
