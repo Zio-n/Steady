@@ -170,7 +170,7 @@ Only after the product works and the commercial/legal decision is documented sho
 ## 7. Open decisions, with their point of resolution
 
 - **Food catalogue:** exact free-source mix, licence compatibility, update cadence, coverage threshold, and hosting cost are unresolved until B1 benchmark. CoFID alone should not be assumed sufficient for branded UK lookup.
-- **Existing data:** number of real accounts, deployed environment, and storage objects are unknown until R0. This determines the migration/backfill depth, never whether preservation is attempted.
+- **Existing data:** R0 found two accounts and no storage objects in the only data-bearing environment, the local Supabase database. Preserve both accounts and all existing dated history through the migration; the verified backup and isolated restore are recorded in the [execution log](reset-execution-log.md).
 - **Targetless calculation/logging:** R1 should confirm the recommended contract: calculate and log without a target; display remaining allowance only when a target exists.
 - **Legacy generated plans:** R1 must pick a documented cutoff for future routine generation and decide how already materialised planned items appear in the new calendar. Do not discard them silently.
 - **Public images/rights/moderation:** choose permitted uploads, retention, takedown and review responsibilities before B6 publication is enabled.
