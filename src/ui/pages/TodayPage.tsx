@@ -72,7 +72,7 @@ export function TodayPage() {
     enabled: Boolean(userId && !profile.isPending),
   });
   const completedCarryQuery = useQuery({
-    queryKey: userId && dayQuery.data?.day ? queryKeys.carryDecisions(userId, dayQuery.data.day.week_start, activeDate) : ['carry-decisions', 'unavailable', activeDate],
+    queryKey: userId && dayQuery.data?.day?.week_start ? queryKeys.carryDecisions(userId, dayQuery.data.day.week_start, activeDate) : ['carry-decisions', 'unavailable', activeDate],
     queryFn: () => loadCarryDecisions(userId!, activeDate),
     enabled: Boolean(userId && dayQuery.data?.day?.status === 'completed'),
   });
@@ -212,7 +212,7 @@ export function TodayPage() {
   const activeCarryTotal = dayIsCompleted ? 0 : dayQuery.data?.carryAdjustments.reduce((sum, carry) => sum + carry.signed_delta_kcal, 0) ?? 0;
   const effectiveTargetKcal = dayIsCompleted
     ? day.completed_target_kcal
-    : day ? day.base_planned_target_kcal + activeCarryTotal : target;
+    : day?.base_planned_target_kcal != null ? day.base_planned_target_kcal + activeCarryTotal : target;
   const calorieSummary = summary.calories;
   const displayedCalories = dayIsCompleted && day.completed_actual_kcal !== null
     ? { ...calorieSummary, value: day.completed_actual_kcal, complete: true }
@@ -301,7 +301,7 @@ export function TodayPage() {
         </div>
       </section>}
 
-      {userId && dayIsCompleted && completionDifference?.eligible && day.completed_actual_kcal != null && day.completed_target_kcal != null && day.completed_log_revision != null && <CarryDecisionPreview
+      {userId && dayIsCompleted && day.week_start && completionDifference?.eligible && day.completed_actual_kcal != null && day.completed_target_kcal != null && day.completed_log_revision != null && <CarryDecisionPreview
         key={`${userId}:${activeDate}:${day.completed_log_revision}`}
         userId={userId}
         sourceDate={activeDate}

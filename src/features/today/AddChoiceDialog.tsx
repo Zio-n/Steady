@@ -20,7 +20,7 @@ export type PreparedChoice = { kind: Selection['kind'] | 'one_off_food' | 'one_o
 const displayNumber = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 export function AddChoiceDialog({
-  open, userId, fields, futureDate, onClose, onPrepared, initialSection = 'breakfast', dialogTitle, submitLabel,
+  open, userId, fields, futureDate, onClose, onPrepared, initialSection = 'breakfast', dialogTitle, submitLabel, actionMode, onActionModeChange,
 }: {
   open: boolean;
   userId: string;
@@ -29,6 +29,8 @@ export function AddChoiceDialog({
   initialSection?: PreparedChoice['section'];
   dialogTitle?: string;
   submitLabel?: string;
+  actionMode?: 'log' | 'plan';
+  onActionModeChange?: (action: 'log' | 'plan') => void;
   onClose: () => void;
   onPrepared: (choice: PreparedChoice) => void;
 }) {
@@ -183,6 +185,7 @@ export function AddChoiceDialog({
   const recentIds = new Set(recentForKind.map((choice) => choice.id));
 
   return <><Dialog open={open} title={dialogTitle ?? (futureDate ? 'Add to your plan' : 'Choose what to log')} closeDisabled={activeWrites > 0} onClose={onClose}>
+    {actionMode && onActionModeChange && <div className="choice-action-picker" role="group" aria-label="Add meal as"><label><input type="radio" name={`${tabId}-action`} checked={actionMode === 'log'} onChange={() => onActionModeChange('log')} />Log as eaten</label><label><input type="radio" name={`${tabId}-action`} checked={actionMode === 'plan'} onChange={() => onActionModeChange('plan')} />Plan for later</label></div>}
     <Field id="choice-section" label="Meal section"><select className="text-field" id="choice-section" value={section} onChange={(event) => setSection(event.target.value as PreparedChoice['section'])}><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner">Dinner</option><option value="snack">Snacks</option></select></Field>
     <div className="choice-tabs" role="tablist" aria-label="Saved item type">
       <button id={`${tabId}-food`} type="button" role="tab" aria-controls={`${tabId}-panel`} aria-selected={kind === 'food'} tabIndex={kind === 'food' ? 0 : -1} onClick={() => requestKind('food')} onKeyDown={handleKindKeyDown}>Foods</button>

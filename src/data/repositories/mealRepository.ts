@@ -73,7 +73,7 @@ export async function saveMeal(input: {
     p_sections: input.sections as Json,
     p_components: input.components as unknown as Json,
     p_meal_id: input.mealId,
-    p_expected_revision: input.expectedRevision,
+    p_expected_revision: input.expectedRevision as number,
     p_declared_total_weight_g: input.declaredTotalWeightG,
   });
   if (error) throw toDataError(error);
@@ -109,7 +109,7 @@ export async function saveRoutineVersion(input: {
   const { data, error } = await supabase.rpc('save_routine_version', {
     p_request_id: input.requestId,
     p_effective_from: input.effectiveFrom,
-    p_expected_revision: input.expectedRevision,
+    p_expected_revision: input.expectedRevision as number,
     p_slots: input.slots as unknown as import('../database.types').Json,
   });
   if (error) throw toDataError(error);

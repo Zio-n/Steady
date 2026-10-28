@@ -10,6 +10,7 @@ export const queryKeys = {
   foodReferences: (userId: string, foodId: string) => ['account', userId, 'food-references', foodId] as const,
   mealLibrary: (userId: string, search: string) => ['account', userId, 'meal-library', search] as const,
   day: (userId: string, localDate: string) => ['account', userId, 'day', localDate] as const,
+  calendarRange: (userId: string, fromDate: string, toDate: string) => ['account', userId, 'calendar-range', fromDate, toDate] as const,
   shuffleSuggestion: (userId: string, localDate: string, itemId: string) => ['account', userId, 'shuffle-suggestion', localDate, itemId] as const,
   recentChoices: (userId: string) => ['account', userId, 'recent-choices'] as const,
   meals: (userId: string, day: string) => ['account', userId, 'meals', day] as const,

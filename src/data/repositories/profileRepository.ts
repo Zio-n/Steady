@@ -56,6 +56,35 @@ export type CompleteOnboardingInput = {
   nutrientTargets: Record<string, number>;
 };
 
+export async function completeCalendarSetup(input: { requestId: string; timezone: string; targetKcal: number | null }) {
+  if (!supabase) throw new DataError('Connect Supabase before saving your profile.', 'configuration');
+  const { data, error } = await supabase.rpc('complete_calendar_setup', {
+    p_request_id: input.requestId,
+    p_timezone: input.timezone,
+    // The SQL argument is nullable; generated function argument types omit nullability.
+    p_target_kcal: input.targetKcal as number,
+  });
+  if (error) throw toDataError(error);
+  return data;
+}
+
+export async function saveCalendarTargets(input: {
+  requestId: string;
+  effectiveFrom: string;
+  baseDailyTargetKcal: number | null;
+  nutrientTargets: Record<string, number>;
+}) {
+  if (!supabase) throw new DataError('Connect Supabase before saving targets.', 'configuration');
+  const { data, error } = await supabase.rpc('save_calendar_targets', {
+    p_request_id: input.requestId,
+    p_effective_from: input.effectiveFrom,
+    p_base_daily_target_kcal: input.baseDailyTargetKcal as number,
+    p_nutrient_targets: input.nutrientTargets as unknown as Json,
+  });
+  if (error) throw toDataError(error);
+  return data;
+}
+
 export async function completeProfileOnboarding(input: CompleteOnboardingInput) {
   if (!supabase) throw new DataError('Connect Supabase before saving your profile.', 'configuration');
   const { data, error } = await supabase.rpc('complete_profile_onboarding', {

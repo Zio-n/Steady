@@ -118,7 +118,7 @@ export async function logDayItem(input: LogDayItemInput) {
     p_local_date: input.localDate,
     p_section: input.section,
     p_source_kind: input.sourceKind,
-    p_source_id: input.sourceId,
+    p_source_id: input.sourceId as string,
     p_amount: input.amount,
     p_unit: input.unit,
     p_manual_payload: input.manualPayload as Json | undefined,
@@ -136,7 +136,7 @@ export async function planDayItem(input: PlanDayItemInput) {
     p_local_date: input.localDate,
     p_section: input.section,
     p_source_kind: input.sourceKind,
-    p_source_id: input.sourceId,
+    p_source_id: input.sourceId as string,
     p_amount: input.amount,
     p_unit: input.unit,
     p_manual_payload: input.manualPayload as Json | undefined,
@@ -148,6 +148,18 @@ export async function planDayItem(input: PlanDayItemInput) {
 export async function removePlannedDayItem(input: { requestId: string; localDate: string; itemId: string; expectedRevision: number }) {
   if (!supabase) throw new DataError('Connect Supabase before changing a plan.', 'configuration');
   const { data, error } = await supabase.rpc('remove_planned_day_item', {
+    p_request_id: input.requestId,
+    p_local_date: input.localDate,
+    p_item_id: input.itemId,
+    p_expected_item_revision: input.expectedRevision,
+  });
+  if (error) throw toDataError(error);
+  return data;
+}
+
+export async function restorePlannedCalendarItem(input: { requestId: string; localDate: string; itemId: string; expectedRevision: number }) {
+  if (!supabase) throw new DataError('Connect Supabase before restoring a plan.', 'configuration');
+  const { data, error } = await supabase.rpc('restore_planned_calendar_item', {
     p_request_id: input.requestId,
     p_local_date: input.localDate,
     p_item_id: input.itemId,
@@ -192,7 +204,7 @@ export async function replacePlannedDayItem(input: ReplacePlannedDayItemInput) {
     p_expected_item_revision: input.expectedRevision,
     p_section: input.section,
     p_source_kind: input.sourceKind,
-    p_source_id: input.sourceId,
+    p_source_id: input.sourceId as string,
     p_amount: input.amount,
     p_unit: input.unit,
     p_manual_payload: input.manualPayload as Json | undefined,
@@ -325,7 +337,7 @@ export async function replaceDayItem(input: ReplaceDayItemInput) {
     p_expected_item_revision: input.expectedRevision,
     p_section: input.section,
     p_source_kind: input.sourceKind,
-    p_source_id: input.sourceId,
+    p_source_id: input.sourceId as string,
     p_amount: input.amount,
     p_unit: input.unit,
     p_manual_payload: input.manualPayload as Json | undefined,
@@ -349,7 +361,7 @@ export async function correctCompletedDayItem(input: CorrectCompletedDayItemInpu
     p_unit: input.unit,
     p_section: input.section,
     p_source_kind: input.sourceKind,
-    p_source_id: input.sourceId,
+    p_source_id: input.sourceId as string | undefined,
     p_manual_payload: input.manualPayload as Json | undefined,
   });
   if (error) throw toDataError(error);

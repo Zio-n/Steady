@@ -107,16 +107,16 @@ export async function saveFood(input: SaveFoodInput) {
   if (!supabase) throw new DataError('Connect Supabase before saving a food.', 'configuration');
   const { data, error } = await supabase.rpc('save_food', {
     p_request_id: input.requestId,
-    p_food_id: input.id,
-    p_expected_revision: input.expectedRevision,
+    p_food_id: input.id as string,
+    p_expected_revision: input.expectedRevision as number,
     p_name: input.name,
-    p_brand: input.brand,
+    p_brand: input.brand as string,
     p_basis_amount: input.basisAmount,
     p_basis_unit: input.basisUnit,
-    p_grams_per_serving: input.gramsPerServing,
+    p_grams_per_serving: input.gramsPerServing as number,
     p_default_portion_amount: input.defaultPortionAmount,
     p_default_portion_unit: input.defaultPortionUnit,
-    p_calories_kcal: input.caloriesKcal,
+    p_calories_kcal: input.caloriesKcal as number,
     p_nutrients: input.nutrients as unknown as Json,
   });
   if (error) throw toDataError(error);

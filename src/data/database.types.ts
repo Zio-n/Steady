@@ -23,7 +23,32 @@ export type Database = {
           }
         },"public": {
           Tables: {
-            "carry_allocations": {
+            "calendar_target_transfers": {
+                  Row: {
+                    "amount_kcal": number,"created_at": string,"destination_date": string,"id": string,"kind": string,"origin_date": string,"request_id": string,"reversal_of": string | null,"user_id": string
+                  }
+                  Insert: {
+                    "amount_kcal": number,"created_at"?: string,"destination_date": string,"id"?: string,"kind": string,"origin_date": string,"request_id": string,"reversal_of"?: string | null,"user_id": string
+                  }
+                  Update: {
+                    "amount_kcal"?: number,"created_at"?: string,"destination_date"?: string,"id"?: string,"kind"?: string,"origin_date"?: string,"request_id"?: string,"reversal_of"?: string | null,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "calendar_target_transfers_user_id_destination_date_fkey"
+      columns: ["user_id","destination_date"]
+isOneToOne: false
+      referencedRelation: "days"
+      referencedColumns: ["user_id","local_date"]
+    },{
+      foreignKeyName: "calendar_target_transfers_user_id_origin_date_fkey"
+      columns: ["user_id","origin_date"]
+isOneToOne: false
+      referencedRelation: "days"
+      referencedColumns: ["user_id","local_date"]
+    }
+                  ]
+                },"carry_allocations": {
                   Row: {
                     "decision_id": string,"destination_date": string,"destination_revision": number,"signed_delta_kcal": number,"user_id": string
                   }
@@ -67,6 +92,25 @@ isOneToOne: false
       referencedColumns: ["user_id","local_date"]
     }
                   ]
+                },"day_item_history": {
+                  Row: {
+                    "action": string,"changed_at": string,"eaten_snapshot": NonNullable<Json>,"event_id": string,"item_id": string,"item_revision": number,"selected_amount": number | null,"selected_unit": string | null,"state": Database["public"]['Enums']["day_item_state"],"user_id": string
+                  }
+                  Insert: {
+                    "action": string,"changed_at"?: string,"eaten_snapshot": NonNullable<Json>,"event_id"?: string,"item_id": string,"item_revision": number,"selected_amount"?: number | null,"selected_unit"?: string | null,"state": Database["public"]['Enums']["day_item_state"],"user_id": string
+                  }
+                  Update: {
+                    "action"?: string,"changed_at"?: string,"eaten_snapshot"?: NonNullable<Json>,"event_id"?: string,"item_id"?: string,"item_revision"?: number,"selected_amount"?: number | null,"selected_unit"?: string | null,"state"?: Database["public"]['Enums']["day_item_state"],"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "day_item_history_user_id_item_id_fkey"
+      columns: ["user_id","item_id"]
+isOneToOne: false
+      referencedRelation: "day_items"
+      referencedColumns: ["user_id","id"]
+    }
+                  ]
                 },"day_items": {
                   Row: {
                     "created_at": string,"eaten_at": string | null,"eaten_snapshot": Json | null,"id": string,"local_date": string,"manual_override": boolean,"planned_payload": NonNullable<Json>,"revision": number,"routine_occurrence_key": string | null,"section": Database["public"]['Enums']["meal_section"],"selected_amount": number | null,"selected_unit": string | null,"source": Database["public"]['Enums']["day_item_source"],"state": Database["public"]['Enums']["day_item_state"],"updated_at": string,"user_id": string
@@ -86,40 +130,15 @@ isOneToOne: false
       referencedColumns: ["user_id","local_date"]
     }
                   ]
-                },"routine_shuffle_suggestions": {
-                  Row: {
-                    "amount": number,"created_at": string,"day_item_id": string,"local_date": string,"meal_id": string,"meal_name": string,"meal_revision": number,"suggestion_revision": number,"updated_at": string,"user_id": string
-                  }
-                  Insert: {
-                    "amount": number,"created_at"?: string,"day_item_id": string,"local_date": string,"meal_id": string,"meal_name": string,"meal_revision": number,"suggestion_revision"?: number,"updated_at"?: string,"user_id": string
-                  }
-                  Update: {
-                    "amount"?: number,"created_at"?: string,"day_item_id"?: string,"local_date"?: string,"meal_id"?: string,"meal_name"?: string,"meal_revision"?: number,"suggestion_revision"?: number,"updated_at"?: string,"user_id"?: string
-                  }
-                  Relationships: [
-                    {
-      foreignKeyName: "routine_shuffle_suggestions_user_id_day_item_id_fkey"
-      columns: ["user_id","day_item_id"]
-isOneToOne: false
-      referencedRelation: "day_items"
-      referencedColumns: ["user_id","id"]
-    },{
-      foreignKeyName: "routine_shuffle_suggestions_user_id_local_date_fkey"
-      columns: ["user_id","local_date"]
-isOneToOne: false
-      referencedRelation: "days"
-      referencedColumns: ["user_id","local_date"]
-    }
-                  ]
                 },"days": {
                   Row: {
-                    "base_planned_target_kcal": number,"completed_actual_kcal": number | null,"completed_at": string | null,"completed_log_revision": number | null,"completed_target_kcal": number | null,"created_at": string,"local_date": string,"log_revision": number,"nutrient_target_snapshot": NonNullable<Json>,"revision": number,"status": Database["public"]['Enums']["day_status"],"updated_at": string,"user_id": string,"week_start": string
+                    "base_planned_target_kcal": number | null,"completed_actual_kcal": number | null,"completed_at": string | null,"completed_log_revision": number | null,"completed_target_kcal": number | null,"created_at": string,"local_date": string,"log_revision": number,"nutrient_target_snapshot": NonNullable<Json>,"revision": number,"status": Database["public"]['Enums']["day_status"],"updated_at": string,"user_id": string,"week_start": string | null
                   }
                   Insert: {
-                    "base_planned_target_kcal": number,"completed_actual_kcal"?: number | null,"completed_at"?: string | null,"completed_log_revision"?: number | null,"completed_target_kcal"?: number | null,"created_at"?: string,"local_date": string,"log_revision"?: number,"nutrient_target_snapshot"?: NonNullable<Json>,"revision"?: number,"status"?: Database["public"]['Enums']["day_status"],"updated_at"?: string,"user_id": string,"week_start": string
+                    "base_planned_target_kcal"?: number | null,"completed_actual_kcal"?: number | null,"completed_at"?: string | null,"completed_log_revision"?: number | null,"completed_target_kcal"?: number | null,"created_at"?: string,"local_date": string,"log_revision"?: number,"nutrient_target_snapshot"?: NonNullable<Json>,"revision"?: number,"status"?: Database["public"]['Enums']["day_status"],"updated_at"?: string,"user_id": string,"week_start"?: string | null
                   }
                   Update: {
-                    "base_planned_target_kcal"?: number,"completed_actual_kcal"?: number | null,"completed_at"?: string | null,"completed_log_revision"?: number | null,"completed_target_kcal"?: number | null,"created_at"?: string,"local_date"?: string,"log_revision"?: number,"nutrient_target_snapshot"?: NonNullable<Json>,"revision"?: number,"status"?: Database["public"]['Enums']["day_status"],"updated_at"?: string,"user_id"?: string,"week_start"?: string
+                    "base_planned_target_kcal"?: number | null,"completed_actual_kcal"?: number | null,"completed_at"?: string | null,"completed_log_revision"?: number | null,"completed_target_kcal"?: number | null,"created_at"?: string,"local_date"?: string,"log_revision"?: number,"nutrient_target_snapshot"?: NonNullable<Json>,"revision"?: number,"status"?: Database["public"]['Enums']["day_status"],"updated_at"?: string,"user_id"?: string,"week_start"?: string | null
                   }
                   Relationships: [
                     {
@@ -258,6 +277,31 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"routine_shuffle_suggestions": {
+                  Row: {
+                    "amount": number,"created_at": string,"day_item_id": string,"local_date": string,"meal_id": string,"meal_name": string,"meal_revision": number,"suggestion_revision": number,"updated_at": string,"user_id": string
+                  }
+                  Insert: {
+                    "amount": number,"created_at"?: string,"day_item_id": string,"local_date": string,"meal_id": string,"meal_name": string,"meal_revision": number,"suggestion_revision"?: number,"updated_at"?: string,"user_id": string
+                  }
+                  Update: {
+                    "amount"?: number,"created_at"?: string,"day_item_id"?: string,"local_date"?: string,"meal_id"?: string,"meal_name"?: string,"meal_revision"?: number,"suggestion_revision"?: number,"updated_at"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "routine_shuffle_suggestions_user_id_day_item_id_fkey"
+      columns: ["user_id","day_item_id"]
+isOneToOne: true
+      referencedRelation: "day_items"
+      referencedColumns: ["user_id","id"]
+    },{
+      foreignKeyName: "routine_shuffle_suggestions_user_id_local_date_fkey"
+      columns: ["user_id","local_date"]
+isOneToOne: false
+      referencedRelation: "days"
+      referencedColumns: ["user_id","local_date"]
+    }
+                  ]
                 },"routine_slots": {
                   Row: {
                     "default_multiplier": number,"meal_id": string | null,"mode": Database["public"]['Enums']["routine_slot_mode"],"position": number,"routine_version_id": string,"section": Database["public"]['Enums']["meal_section"],"slot_id": string,"user_id": string,"weekday": number
@@ -372,83 +416,115 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "ensure_routine_day":
-{ Args: { "p_local_date": string }; Returns: Json
+            "accept_whole_day_shuffle":
+{ Args: { "p_changes": Json,"p_local_date": string,"p_request_id": string }; Returns: Json
                            },
-            "ensure_day_snapshot":
-{ Args: { "p_local_date": string }; Returns: Json
-                           },
-            "complete_day":
-{ Args: { "p_expected_day_revision": number,"p_expected_log_revision": number,"p_local_date": string,"p_request_id": string }; Returns: Json
-                           },
-            "save_carry_decision":
-{ Args: { "p_action": Database["public"]["Enums"]["carry_action"],"p_allocations": Json,"p_amount_kcal": number,"p_expected_log_revision": number,"p_expected_source_revision": number,"p_expected_week_revision": number,"p_request_id": string,"p_source_date": string,"p_week_start": string }; Returns: Json
-                           },
-            "reverse_carry_decision":
-{ Args: { "p_decision_id": string,"p_expected_revisions": Json,"p_expected_week_revision": number,"p_request_id": string }; Returns: Json
-                           },
-            "archive_food":
+"archive_food":
 { Args: { "p_expected_revision": number,"p_food_id": string,"p_request_id": string }; Returns: Json
                            },
-            "complete_profile_onboarding":
+"calendar_log_day_item":
+{ Args: { "p_amount": number,"p_expected_item_revision"?: number,"p_local_date": string,"p_manual_payload"?: Json,"p_planned_item_id"?: string,"p_request_id": string,"p_section": Database["public"]['Enums']["meal_section"],"p_source_id": string,"p_source_kind": string,"p_unit": string }; Returns: Json
+                           },
+"calendar_plan_day_item":
+{ Args: { "p_amount": number,"p_local_date": string,"p_manual_payload"?: Json,"p_request_id": string,"p_section": Database["public"]['Enums']["meal_section"],"p_source_id": string,"p_source_kind": string,"p_unit": string }; Returns: Json
+                           },
+"complete_calendar_setup":
+{ Args: { "p_request_id": string,"p_target_kcal"?: number,"p_timezone": string }; Returns: Json
+                           },
+"complete_day":
+{ Args: { "p_expected_day_revision": number,"p_expected_log_revision": number,"p_local_date": string,"p_request_id": string }; Returns: Json
+                           },
+"complete_profile_onboarding":
 { Args: { "p_base_daily_target_kcal": number,"p_displayed_fields": Json,"p_nutrient_targets": Json,"p_request_id": string,"p_timezone": string }; Returns: Json
+                           },
+"correct_completed_day_item":
+{ Args: { "p_action": string,"p_amount"?: number,"p_expected_day_revision": number,"p_expected_item_revision": number,"p_expected_log_revision": number,"p_item_id": string,"p_local_date": string,"p_manual_payload"?: Json,"p_request_id": string,"p_section"?: Database["public"]['Enums']["meal_section"],"p_source_id"?: string,"p_source_kind"?: string,"p_unit"?: string }; Returns: Json
+                           },
+"delete_food":
+{ Args: { "p_expected_revision": number,"p_food_id": string,"p_request_id": string }; Returns: Json
+                           },
+"ensure_day_snapshot":
+{ Args: { "p_local_date": string }; Returns: Json
+                           },
+"ensure_routine_day":
+{ Args: { "p_local_date": string }; Returns: Json
+                           },
+"ensure_week":
+{ Args: { "p_week_start": string }; Returns: Json
+                           },
+"log_day_item":
+{ Args: { "p_amount": number,"p_expected_item_revision"?: number,"p_local_date": string,"p_manual_payload"?: Json,"p_planned_item_id"?: string,"p_request_id": string,"p_section": Database["public"]['Enums']["meal_section"],"p_source_id": string,"p_source_kind": string,"p_unit": string }; Returns: Json
+                           },
+"plan_day_item":
+{ Args: { "p_amount": number,"p_local_date": string,"p_manual_payload"?: Json,"p_request_id": string,"p_section": Database["public"]['Enums']["meal_section"],"p_source_id": string,"p_source_kind": string,"p_unit": string }; Returns: Json
+                           },
+"read_calendar_day":
+{ Args: { "p_local_date": string }; Returns: Json
+                           },
+"read_calendar_range":
+{ Args: { "p_from_date": string,"p_to_date": string }; Returns: Json
+                           },
+"remove_planned_day_item":
+{ Args: { "p_expected_item_revision": number,"p_item_id": string,"p_local_date": string,"p_request_id": string }; Returns: Json
                            },
 "reorder_nutrient_fields":
 { Args: { "p_ordered_field_ids": Json }; Returns: Json
                            },
-            "delete_food":
-{ Args: { "p_expected_revision": number,"p_food_id": string,"p_request_id": string }; Returns: Json
+"replace_day_item":
+{ Args: { "p_amount": number,"p_expected_item_revision": number,"p_item_id": string,"p_local_date": string,"p_manual_payload"?: Json,"p_request_id": string,"p_section": Database["public"]['Enums']["meal_section"],"p_source_id": string,"p_source_kind": string,"p_unit": string }; Returns: Json
                            },
-            "log_day_item":
-{ Args: { "p_amount": number,"p_expected_item_revision"?: number,"p_local_date": string,"p_manual_payload"?: Json,"p_planned_item_id"?: string,"p_request_id": string,"p_section": Database["public"]["Enums"]["meal_section"],"p_source_id": string | null,"p_source_kind": string,"p_unit": string }; Returns: Json
+"replace_planned_day_item":
+{ Args: { "p_amount": number,"p_expected_item_revision": number,"p_item_id": string,"p_local_date": string,"p_manual_payload"?: Json,"p_request_id": string,"p_section": Database["public"]['Enums']["meal_section"],"p_source_id": string,"p_source_kind": string,"p_unit": string }; Returns: Json
                            },
-            "plan_day_item":
-{ Args: { "p_amount": number,"p_local_date": string,"p_manual_payload"?: Json,"p_request_id": string,"p_section": Database["public"]["Enums"]["meal_section"],"p_source_id": string | null,"p_source_kind": string,"p_unit": string }; Returns: Json
-                           },
-            "remove_planned_day_item":
-{ Args: { "p_expected_item_revision": number,"p_item_id": string,"p_local_date": string,"p_request_id": string }; Returns: Json
-                           },
-            "resize_planned_day_item":
+"resize_planned_day_item":
 { Args: { "p_amount": number,"p_expected_item_revision": number,"p_item_id": string,"p_local_date": string,"p_request_id": string }; Returns: Json
                            },
-            "replace_planned_day_item":
-{ Args: { "p_amount": number,"p_expected_item_revision": number,"p_item_id": string,"p_local_date": string,"p_manual_payload"?: Json,"p_request_id": string,"p_section": Database["public"]["Enums"]["meal_section"],"p_source_id": string | null,"p_source_kind": string,"p_unit": string }; Returns: Json
+"restore_planned_calendar_item":
+{ Args: { "p_expected_item_revision": number,"p_item_id": string,"p_local_date": string,"p_request_id": string }; Returns: Json
                            },
-            "use_shuffle_suggestion":
-{ Args: { "p_expected_item_revision": number,"p_expected_meal_revision": number,"p_expected_suggestion_revision": number,"p_item_id": string,"p_local_date": string,"p_meal_id": string,"p_request_id": string }; Returns: Json
+"reverse_calendar_target_transfer":
+{ Args: { "p_request_id": string,"p_transfer_id": string }; Returns: Json
                            },
-            "save_routine_shuffle_suggestion":
-{ Args: { "p_expected_item_revision": number,"p_expected_meal_revision": number,"p_expected_suggestion_revision": number,"p_item_id": string,"p_local_date": string,"p_meal_id": string,"p_request_id": string }; Returns: Json
+"reverse_carry_decision":
+{ Args: { "p_decision_id": string,"p_expected_revisions": Json,"p_expected_week_revision": number,"p_request_id": string }; Returns: Json
                            },
-            "accept_whole_day_shuffle":
-{ Args: { "p_changes": Json,"p_local_date": string,"p_request_id": string }; Returns: Json
-                           },
-            "ensure_week":
-{ Args: { "p_week_start": string }; Returns: Json
-                           },
-            "save_week_allocation":
-{ Args: { "p_allocation_kind": Database["public"]["Enums"]["allocation_kind"],"p_expected_revision": number,"p_request_id": string,"p_targets": Json,"p_week_start": string }; Returns: Json
-                           },
-            "revise_day_item":
+"revise_day_item":
 { Args: { "p_action": string,"p_amount"?: number,"p_expected_item_revision": number,"p_item_id": string,"p_local_date": string,"p_request_id": string,"p_unit"?: string }; Returns: Json
                            },
-            "replace_day_item":
-{ Args: { "p_amount": number,"p_expected_item_revision": number,"p_item_id": string,"p_local_date": string,"p_manual_payload"?: Json,"p_request_id": string,"p_section": Database["public"]["Enums"]["meal_section"],"p_source_id": string | null,"p_source_kind": string,"p_unit": string }; Returns: Json
+"save_calendar_target_transfer":
+{ Args: { "p_amount_kcal": number,"p_destination_date": string,"p_origin_date": string,"p_request_id": string }; Returns: Json
                            },
-            "correct_completed_day_item":
-{ Args: { "p_action": string,"p_amount"?: number,"p_expected_day_revision": number,"p_expected_item_revision": number,"p_expected_log_revision": number,"p_item_id": string,"p_local_date": string,"p_manual_payload"?: Json,"p_request_id": string,"p_section"?: Database["public"]["Enums"]["meal_section"],"p_source_id"?: string | null,"p_source_kind"?: string,"p_unit"?: string }; Returns: Json
+"save_calendar_targets":
+{ Args: { "p_base_daily_target_kcal": number,"p_effective_from": string,"p_nutrient_targets": Json,"p_request_id": string }; Returns: Json
                            },
-            "save_food":
-{ Args: { "p_basis_amount": number,"p_basis_unit": string,"p_brand": string | null,"p_calories_kcal": number | null,"p_default_portion_amount": number,"p_default_portion_unit": string,"p_expected_revision": number | null,"p_food_id": string | null,"p_grams_per_serving": number | null,"p_name": string,"p_nutrients": Json,"p_request_id": string }; Returns: Json
+"save_carry_decision":
+{ Args: { "p_action": Database["public"]['Enums']["carry_action"],"p_allocations": Json,"p_amount_kcal": number,"p_expected_log_revision": number,"p_expected_source_revision": number,"p_expected_week_revision": number,"p_request_id": string,"p_source_date": string,"p_week_start": string }; Returns: Json
+                           },
+"save_food":
+{ Args: { "p_basis_amount": number,"p_basis_unit": string,"p_brand": string,"p_calories_kcal": number,"p_default_portion_amount": number,"p_default_portion_unit": string,"p_expected_revision": number,"p_food_id": string,"p_grams_per_serving": number,"p_name": string,"p_nutrients": Json,"p_request_id": string }; Returns: Json
                            },
 "save_meal":
 { Args: { "p_components": Json,"p_declared_total_weight_g"?: number,"p_expected_revision"?: number,"p_meal_id"?: string,"p_name": string,"p_request_id": string,"p_sections": Json }; Returns: Json
                            },
-            "save_profile_targets":
+"save_profile_targets":
 { Args: { "p_allocation_strategy"?: string,"p_base_daily_target_kcal": number,"p_expected_revision": number,"p_nutrient_targets": Json,"p_request_id": string }; Returns: Json
                            },
-            "save_routine_version":
-{ Args: { "p_effective_from": string,"p_expected_revision": number | null,"p_request_id": string,"p_slots": Json }; Returns: Json
+"save_routine_shuffle_suggestion":
+{ Args: { "p_expected_item_revision": number,"p_expected_meal_revision": number,"p_expected_suggestion_revision": number,"p_item_id": string,"p_local_date": string,"p_meal_id": string,"p_request_id": string }; Returns: Json
+                           },
+"save_routine_version":
+{ Args: { "p_effective_from": string,"p_expected_revision": number,"p_request_id": string,"p_slots": Json }; Returns: Json
+                           },
+"save_week_allocation":
+{ Args: { "p_expected_revision": number,"p_request_id": string,"p_targets": Json,"p_week_start": string }; Returns: Json
+                           } |
+{ Args: { "p_allocation_kind": Database["public"]['Enums']["allocation_kind"],"p_expected_revision": number,"p_request_id": string,"p_targets": Json,"p_week_start": string }; Returns: Json
+                           },
+"transfer_calendar_plan":
+{ Args: { "p_action": string,"p_expected_item_revision": number,"p_from_date": string,"p_item_id": string,"p_request_id": string,"p_to_date": string }; Returns: Json
+                           },
+"use_shuffle_suggestion":
+{ Args: { "p_expected_item_revision": number,"p_expected_meal_revision": number,"p_expected_suggestion_revision": number,"p_item_id": string,"p_local_date": string,"p_meal_id": string,"p_request_id": string }; Returns: Json
                            }
           }
           Enums: {
