@@ -10,7 +10,7 @@ export type CompleteDayInput = { requestId: string; localDate: string; expectedD
 export type LogDayItemInput = {
   requestId: string;
   localDate: string;
-  section: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  section: Tables<'day_items'>['section'];
   sourceKind: 'food' | 'meal' | 'one_off_food' | 'one_off_meal';
   sourceId: string | null;
   amount: number;
@@ -40,7 +40,7 @@ export type ReplaceDayItemInput = {
   localDate: string;
   itemId: string;
   expectedRevision: number;
-  section: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  section: Tables<'day_items'>['section'];
   sourceKind: 'food' | 'meal' | 'one_off_food' | 'one_off_meal';
   sourceId: string | null;
   amount: number;
@@ -58,7 +58,7 @@ export type CorrectCompletedDayItemInput = {
   action: 'resize' | 'remove' | 'restore' | 'replace';
   amount?: number;
   unit?: string;
-  section?: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  section?: Tables<'day_items'>['section'];
   sourceKind?: 'food' | 'meal' | 'one_off_food' | 'one_off_meal';
   sourceId?: string | null;
   manualPayload?: Record<string, unknown>;

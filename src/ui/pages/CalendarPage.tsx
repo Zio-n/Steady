@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useOutletContext, useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, Plus, Settings } from 'lucide-react';
+import { Calendar, CalendarDays, CalendarRange, Check, ChevronDown, ChevronLeft, ChevronRight, Ellipsis, NotebookPen, Plus, Settings } from 'lucide-react';
 import { useAuth } from '../../app/AuthProvider';
 import { useProfile } from '../../features/profile/useProfile';
 import { AddChoiceDialog, type PreparedChoice } from '../../features/today/AddChoiceDialog';
@@ -22,6 +22,11 @@ const sections = [
 const number = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 1 });
 const validDate = (value: string | null) => value !== null && isValidLocalDate(value);
 type CalendarView = 'day' | 'week' | 'month';
+const calendarViews = [
+  { value: 'day', label: 'Day', icon: CalendarDays },
+  { value: 'week', label: 'Week', icon: CalendarRange },
+  { value: 'month', label: 'Month', icon: Calendar },
+] as const;
 
 export function CalendarPage() {
   const headerHost = useOutletContext<HTMLDivElement | null>();
@@ -41,7 +46,7 @@ export function CalendarPage() {
   const rangeFrom = view === 'week' ? startOfLocalWeek(localDate) : startOfLocalWeek(monthFirst);
   const rangeTo = view === 'week' ? addLocalDays(rangeFrom, 6) : addLocalDays(startOfLocalWeek(monthLast), 6);
   const [adding, setAdding] = useState<'log' | 'plan' | null>(() => searchParams.get('start') === 'meal' ? 'log' : null);
-  const [addingSection, setAddingSection] = useState<PreparedChoice['section']>('breakfast');
+  const [composerAnchor, setComposerAnchor] = useState<{ left: number; top: number; width: number } | null>(null);
   const [pendingChoice, setPendingChoice] = useState<{ action: 'log' | 'plan'; input: CalendarChoice } | null>(null);
   const [editingItem, setEditingItem] = useState<DayItem | null>(null);
   const [editAmount, setEditAmount] = useState('');
@@ -53,7 +58,10 @@ export function CalendarPage() {
   const [showAllNutrients, setShowAllNutrients] = useState(false);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const [pickerMonth, setPickerMonth] = useState(localDate.slice(0, 7));
+  const viewMenuRef = useRef<HTMLDivElement>(null);
+  const viewTriggerRef = useRef<HTMLButtonElement>(null);
   const swipeStart = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -71,7 +79,7 @@ export function CalendarPage() {
   }
 
   function chooseView(nextView: CalendarView) {
-    setAdding(null); setMonthPickerOpen(false); setNotice('');
+    setAdding(null); setMonthPickerOpen(false); setViewMenuOpen(false); setNotice('');
     setSearchParams({ ...(localDate === today ? {} : { date: localDate }), ...(nextView === 'day' ? {} : { view: nextView }) });
   }
 
@@ -84,9 +92,12 @@ export function CalendarPage() {
     chooseDate(view === 'month' ? addLocalMonths(localDate, delta) : addLocalDays(localDate, view === 'week' ? delta * 7 : delta));
   }
 
-  function openAdd(action: 'log' | 'plan', section: PreparedChoice['section'] = 'breakfast') {
-    setAddingSection(section);
-    setAdding(action);
+  function openAdd(event: MouseEvent<HTMLButtonElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const calendar = event.currentTarget.closest('.calendar-page')?.getBoundingClientRect();
+    const margin = window.innerWidth > 900 ? 28 : 14;
+    setComposerAnchor({ left: (calendar?.left ?? 0) + margin, top: rect.bottom + 14, width: Math.min(520, (calendar?.width ?? window.innerWidth) - margin * 2) });
+    setAdding(localDate > today ? 'plan' : 'log');
   }
 
   const dayQuery = useQuery({
@@ -115,6 +126,21 @@ export function CalendarPage() {
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [monthPickerOpen]);
+  useEffect(() => {
+    if (!viewMenuOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!viewMenuRef.current?.contains(event.target as Node)) setViewMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { setViewMenuOpen(false); viewTriggerRef.current?.focus(); }
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [viewMenuOpen]);
   const refresh = async (date: string) => {
     if (!userId) return;
     await Promise.all([
@@ -213,6 +239,13 @@ export function CalendarPage() {
 
   const data = view === 'day' ? dayQuery.data : undefined;
   const rangeDays = view === 'day' ? [] : rangeQuery.data ?? [];
+  const labelledGroups = sections.map(([section, label]) => ({ section, label, items: data?.items.filter((item) => item.section === section) ?? [] }))
+    .filter((group) => group.items.length > 0);
+  const unlabelledItems = data?.items.filter((item) => item.section === 'unlabelled') ?? [];
+  const mealGroups: Array<{ section: string; label: string | null; items: DayItem[] }> = [
+    ...labelledGroups,
+    ...(unlabelledItems.length > 0 ? [{ section: 'unlabelled', label: labelledGroups.length > 0 ? 'Other meals' : null, items: unlabelledItems }] : []),
+  ];
   const fields = profile.data?.nutrientFields.filter((field) => field.is_displayed) ?? [];
   const summary = summarizeDay(data?.items ?? [], fields.map((field) => field.field_id));
   const target = data?.target.caloriesKcal ?? null;
@@ -233,14 +266,11 @@ export function CalendarPage() {
         <button className="calendar-period-button" type="button" aria-label={`Previous ${view}`} onClick={() => movePeriod(-1)}><ChevronLeft size={20} /></button>
         <button className="calendar-period-button" type="button" aria-label={`Next ${view}`} onClick={() => movePeriod(1)}><ChevronRight size={20} /></button>
       </div>
-      <h1>{title}</h1>
-      <button className="calendar-month-toggle" type="button" aria-controls="calendar-month-picker" aria-expanded={monthPickerOpen} onClick={() => {
+      <div className="calendar-date-picker-control"><button className="calendar-month-toggle" type="button" aria-label={`Choose date, ${title}`} aria-controls="calendar-month-picker" aria-expanded={monthPickerOpen} onClick={() => {
         setPickerMonth(localDate.slice(0, 7));
         setMonthPickerOpen((open) => !open);
-      }}>{formatLocalDate(localDate, timezone, { month: 'long' })}<ChevronDown aria-hidden="true" size={19} className={monthPickerOpen ? 'is-open' : ''} /></button>
-      <Link className="calendar-settings-link" to="/settings" aria-label="Calendar settings"><Settings size={19} strokeWidth={1.8} /></Link>
-      <div className="calendar-view-picker"><label className="sr-only" htmlFor="calendar-view">Calendar view</label><select id="calendar-view" value={view} onChange={(event) => chooseView(event.target.value as CalendarView)}><option value="day">Day</option><option value="week">Week</option><option value="month">Month</option></select><ChevronDown aria-hidden="true" size={17} /></div>
-      {monthPickerOpen && <><button className="calendar-picker-scrim" type="button" tabIndex={-1} aria-label="Close calendar picker" onClick={() => setMonthPickerOpen(false)} /><section className="calendar-month-popover" id="calendar-month-picker" aria-label="Choose a calendar date">
+      }}><span className="calendar-date-label-full">{title}</span><span className="calendar-date-label-month">{formatLocalDate(localDate, timezone, { month: 'long' })}</span><ChevronDown aria-hidden="true" size={19} className={monthPickerOpen ? 'is-open' : ''} /></button>
+      {monthPickerOpen && <section className="calendar-month-popover" id="calendar-month-picker" aria-label="Choose a calendar date">
         <div className="calendar-month-popover-head"><strong>{formatLocalDate(pickerFirst, timezone, { month: 'long', year: 'numeric' })}</strong><div><button type="button" aria-label="Previous month" onClick={() => setPickerMonth(addLocalMonths(pickerFirst, -1).slice(0, 7))}><ChevronLeft size={20} /></button><button type="button" aria-label="Next month" onClick={() => setPickerMonth(addLocalMonths(pickerFirst, 1).slice(0, 7))}><ChevronRight size={20} /></button></div></div>
         <div className="calendar-month-weekdays" aria-hidden="true">{['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, index) => <span key={index}>{day}</span>)}</div>
         {pickerQuery.isPending && <p className="calendar-picker-status">Loading dates…</p>}
@@ -254,7 +284,20 @@ export function CalendarPage() {
           const outside = day.localDate.slice(0, 7) !== pickerMonth;
           return <button key={day.localDate} className={`calendar-month-date${outside ? ' is-outside' : ''}${day.localDate === localDate ? ' is-selected' : ''}${day.localDate === today ? ' is-today' : ''}`} type="button" aria-current={day.localDate === today ? 'date' : undefined} aria-label={`${formatLocalDate(day.localDate, timezone, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}${calorieLabel ? `, ${calorieLabel} eaten` : planLabel ? `, ${planLabel}` : ''}`} onClick={() => selectDay(day.localDate)}><span>{formatLocalDate(day.localDate, timezone, { day: 'numeric' })}</span>{(calorieLabel || planLabel) && <small>{calorieLabel || planLabel}</small>}</button>;
         })}</div>}
-      </section></>}
+      </section>}</div>
+      {monthPickerOpen && <button className="calendar-picker-scrim" type="button" tabIndex={-1} aria-label="Close calendar picker" onClick={() => setMonthPickerOpen(false)} />}
+      <Link className="calendar-settings-link" to="/settings" aria-label="Calendar settings"><Settings size={19} strokeWidth={1.8} /></Link>
+      <div className="calendar-view-picker" ref={viewMenuRef}>
+        <button ref={viewTriggerRef} className="calendar-view-trigger" type="button" aria-label={`Calendar view: ${calendarViews.find((item) => item.value === view)?.label}`} aria-expanded={viewMenuOpen} aria-controls="calendar-view-options" onClick={() => { setMonthPickerOpen(false); setViewMenuOpen((open) => !open); }}>
+          {calendarViews.map(({ value, icon: Icon }) => value === view && <Icon key={value} size={18} strokeWidth={1.8} aria-hidden="true" />)}
+          <span>{calendarViews.find((item) => item.value === view)?.label}</span>
+          <ChevronDown className={viewMenuOpen ? 'is-open' : ''} size={17} aria-hidden="true" />
+        </button>
+        {viewMenuOpen && <div className="calendar-view-options" id="calendar-view-options" role="group" aria-label="Calendar view choices">
+          {calendarViews.map(({ value, label, icon: Icon }) => <button key={value} className={`calendar-view-option${view === value ? ' is-active' : ''}`} type="button" aria-current={view === value ? 'true' : undefined} onClick={() => chooseView(value)}><Icon size={18} strokeWidth={1.8} aria-hidden="true" /><span>{label}</span>{view === value && <Check className="calendar-view-check" size={16} strokeWidth={2} aria-hidden="true" />}</button>)}
+        </div>}
+      </div>
+      <Link className="calendar-builder-link" to="/library?view=meals&create=1" aria-label="Build a meal"><NotebookPen size={18} strokeWidth={1.8} /><span className="calendar-builder-full">Build a meal</span><span className="calendar-builder-short">Build</span></Link>
     </div>, headerHost)}
     <div className="page-stack calendar-page" onTouchStart={(event) => {
       if (view !== 'day' || monthPickerOpen || !window.matchMedia('(max-width: 760px)').matches || event.touches.length !== 1) return;
@@ -278,7 +321,7 @@ export function CalendarPage() {
       <section className="calendar-day-panel" aria-label="Meals and nutrition for this date">
       <div className="calendar-day-overview">
         <div className="calendar-day-identity">
-          <button className="calendar-day-create" type="button" disabled={busy || data.day?.status === 'completed'} aria-label="Add a meal to this day" onClick={() => openAdd(localDate > today ? 'plan' : 'log')}><Plus size={36} strokeWidth={1.8} /></button>
+          <button className="calendar-day-create" type="button" disabled={busy || data.day?.status === 'completed'} aria-label="Add a meal" onClick={(event) => openAdd(event)}><Plus size={36} strokeWidth={1.8} /></button>
           <div className={`calendar-day-date${isToday ? ' is-today' : ''}`}><span>{formatLocalDate(localDate, timezone, { weekday: 'short' })}</span><strong aria-current={isToday ? 'date' : undefined}>{formatLocalDate(localDate, timezone, { day: 'numeric' })}</strong></div>
         </div>
         <div className="calendar-day-metrics">
@@ -294,10 +337,19 @@ export function CalendarPage() {
       <div className="calendar-day-main">
 
       {data.day?.status === 'completed' && <StatusMessage tone="info">This older date has a saved completion snapshot. Its target is preserved as recorded.</StatusMessage>}
-      <section className="today-meals" aria-label="Meal sections">
-        <div className="today-sections">{sections.map(([section, label]) => { const items = data.items.filter((item) => item.section === section); return <section className="today-meal-section" key={section} aria-labelledby={`calendar-${section}`}>
-          <div className="today-section-heading"><h3 id={`calendar-${section}`}>{label}</h3><span>{items.length || '—'}</span></div>
-          <div className={`calendar-meal-slot${items.length === 0 ? ' is-empty' : ''}`}>{items.length > 0 && <ul className="today-item-list">{items.map((item) => {
+      <section className="today-meals" aria-label="Meals">
+        {mealGroups.length === 0 ? <div className="calendar-day-empty">
+          <h2>{data.day?.status === 'completed' ? 'No meals recorded' : localDate > today ? 'Plan your first meal' : 'Your first meal goes here'}</h2>
+          <p>{data.day?.status === 'completed'
+            ? 'This day was completed without any logged or planned meals.'
+            : localDate > today
+              ? 'Build out this day at your own pace. Planned meals will appear here, ready to adjust or log when you eat.'
+              : 'Log what you’ve eaten or plan what’s next. Your meals will appear here, and your nutrition totals will update above.'}</p>
+          {data.day?.status !== 'completed' && <button className="calendar-empty-add" type="button" disabled={busy} onClick={(event) => openAdd(event)}><Plus size={22} strokeWidth={1.9} />{localDate > today ? 'Plan a meal' : 'Add a meal'}</button>}
+        </div> :
+        <div className="today-sections">{mealGroups.map(({ section, label, items }) => <section className="today-meal-section" key={section} aria-labelledby={label ? `calendar-${section}` : undefined} aria-label={label ? undefined : 'Meals'}>
+          {label && <div className="today-section-heading"><h3 id={`calendar-${section}`}>{label}</h3></div>}
+          <ul className="today-item-list">{items.map((item) => {
             const snapshot = item.state === 'eaten' ? readEatenSnapshot(item.eaten_snapshot) : null;
             const name = snapshot?.name ?? plannedItemName(item.planned_payload) ?? 'Planned item';
             return <li key={item.id} className={`today-item${expandedItemId === item.id ? ' is-actions-open' : ''}`}><div className="today-item-main"><div><h4>{name}</h4><p>{item.selected_amount} {item.selected_unit}</p></div><span className={`today-item-state ${item.state === 'eaten' ? 'is-eaten' : 'is-planned'}`}>{item.state === 'eaten' ? 'Eaten' : 'Planned'}</span></div>
@@ -311,14 +363,12 @@ export function CalendarPage() {
                 {item.state === 'planned' && <><button className="text-button" type="button" disabled={busy || data.day?.status === 'completed'} onClick={() => { setTransferDate(addLocalDays(localDate, 1)); setTransferAction('copy'); setTransferItem(item); }}>Copy to date</button><button className="text-button" type="button" disabled={busy || data.day?.status === 'completed'} onClick={() => { setTransferDate(addLocalDays(localDate, 1)); setTransferAction('move'); setTransferItem(item); }}>Move to date</button></>}
               </div>
             </li>;
-          })}</ul>}
-          {data.day?.status !== 'completed' && <button className={`calendar-slot-add${items.length === 0 ? ' is-empty' : ''}`} type="button" aria-label={`Add to ${label}`} title={`Add to ${label}`} onClick={() => openAdd(localDate > today ? 'plan' : 'log', section)}><Plus size={items.length === 0 ? 22 : 18} strokeWidth={1.8} /></button>}
-          {items.length === 0 && data.day?.status === 'completed' && <p className="today-section-empty">No meals</p>}</div>
-        </section>; })}</div>
+          })}</ul>
+        </section>)}</div>}
       </section>
       </div>
       </section>
-      {data.day?.status !== 'completed' && <button className="calendar-mobile-add" type="button" disabled={busy} aria-label="Add a meal to this day" onClick={() => openAdd(localDate > today ? 'plan' : 'log')}><Plus size={29} strokeWidth={1.9} /></button>}
+      {data.day?.status !== 'completed' && <button className="calendar-mobile-add" type="button" disabled={busy} aria-label="Add a meal" onClick={(event) => openAdd(event)}><Plus size={29} strokeWidth={1.9} /></button>}
 
       {reviseMutation.isError && reviseMutation.variables && <div className="page-stack"><StatusMessage tone="error">The meal change could not be confirmed.</StatusMessage><button className="text-button" type="button" disabled={busy} onClick={() => reviseMutation.mutate(reviseMutation.variables)}>Retry same request</button></div>}
       {resizePlanMutation.isError && resizePlanMutation.variables && <div className="page-stack"><StatusMessage tone="error">The planned portion could not be confirmed.</StatusMessage><button className="text-button" type="button" disabled={busy} onClick={() => resizePlanMutation.mutate(resizePlanMutation.variables)}>Retry same request</button></div>}
@@ -356,10 +406,10 @@ export function CalendarPage() {
       <div className="dialog-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => setTransferItem(null)}>Cancel</button><button type="button" className="primary-button" disabled={busy || !transferItem || !validDate(transferDate) || transferAction === 'move' && transferDate === localDate} onClick={() => transferItem && transferMutation.mutate({ requestId: crypto.randomUUID(), fromDate: localDate, toDate: transferDate, itemId: transferItem.id, expectedRevision: transferItem.revision, action: transferAction })}>{busy ? 'Saving…' : transferAction === 'copy' ? 'Copy meal' : 'Move meal'}</button></div>
     </Dialog>
 
-    {userId && adding && <AddChoiceDialog open userId={userId} fields={fields} futureDate={adding === 'plan'} initialSection={addingSection}
+    {userId && adding && <AddChoiceDialog open userId={userId} fields={profile.data?.nutrientFields ?? []} futureDate={adding === 'plan'} initialSection="unlabelled" dateLabel={formatLocalDate(localDate, timezone, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} anchor={composerAnchor}
       actionMode={adding} onActionModeChange={localDate <= today ? setAdding : undefined}
-      dialogTitle={adding === 'plan' ? 'Plan a meal' : 'Log a meal'}
-      onClose={() => setAdding(null)} onPrepared={(choice) => { const action = adding; setAdding(null); submit(choice, action); }} />}
+      dialogTitle="Add a meal"
+      onClose={() => setAdding(null)} onSavedOnly={(name) => { setAdding(null); setNotice(`${name} saved to your Library.`); }} onPrepared={(choice) => { const action = adding; setAdding(null); submit(choice, action); }} />}
     </div></>;
 }
 
@@ -372,6 +422,9 @@ function CalendarRangeView({ days, timezone, selectedDate, today, monthView, onC
     <div className="calendar-day-grid">{days.map((day) => {
       const summary = summarizeDay(day.items, []);
       const calories = summary.calories.value;
+      const target = day.target.caloriesKcal;
+      const hasActivity = summary.eatenCount > 0 || summary.plannedCount > 0;
+      const activity = [summary.eatenCount > 0 ? `${summary.eatenCount} eaten` : '', summary.plannedCount > 0 ? `${summary.plannedCount} planned` : ''].filter(Boolean).join(' · ');
       const isSelected = day.localDate === selectedDate;
       const isToday = day.localDate === today;
       const isOutsideMonth = monthView && day.localDate.slice(0, 7) !== selectedDate.slice(0, 7);
@@ -379,11 +432,15 @@ function CalendarRangeView({ days, timezone, selectedDate, today, monthView, onC
       const dateLabel = formatLocalDate(day.localDate, timezone, { weekday: 'long', day: 'numeric', month: 'long' });
       return <button key={day.localDate} type="button" className={`calendar-date-card${isSelected ? ' is-selected' : ''}${isToday ? ' is-today' : ''}${isOutsideMonth ? ' is-outside-month' : ''}`}
         aria-current={isToday ? 'date' : undefined}
-        aria-label={`${dateLabel}${isToday ? ', today' : ''}, ${summary.eatenCount} eaten, ${summary.plannedCount} planned, ${calories === null ? 'calories unknown' : `${number(calories)} calories eaten`}`}
+        aria-label={`${dateLabel}${isToday ? ', today' : ''}, ${summary.eatenCount} eaten, ${summary.plannedCount} planned, ${calories === null ? 'calories unknown' : `${number(calories)} calories eaten`}${target === null ? '' : `, ${number(target)} calorie target`}`}
         onClick={() => onChoose(day.localDate)}>
-        <span className="calendar-date-head"><span className="calendar-weekday-label">{formatLocalDate(day.localDate, timezone, { weekday: 'short' })}</span><span className="calendar-date-number">{formatLocalDate(day.localDate, timezone, { day: 'numeric' })}</span>{isToday && <span className="calendar-date-today-label">Today</span>}</span>
+        <span className="calendar-date-head"><span className="calendar-weekday-label">{formatLocalDate(day.localDate, timezone, { weekday: 'short' })}</span><span className="calendar-date-number">{formatLocalDate(day.localDate, timezone, { day: 'numeric' })}</span></span>
+        {(!monthView || hasActivity) && <span className="calendar-date-summary" aria-hidden="true">
+          {(summary.eatenCount > 0 || !monthView) && <span className="calendar-date-calories">{calories === null ? 'Unknown' : number(calories)} <small>{target === null || monthView ? 'kcal' : `of ${number(target)} kcal`}</small></span>}
+          <span className="calendar-date-activity">{activity || (day.localDate > today ? 'No meals planned' : 'No meals logged')}</span>
+          {!monthView && target !== null && calories !== null && <span className="calendar-date-progress"><span style={{ width: `${Math.min(100, Math.max(0, calories / target * 100))}%` }} /></span>}
+        </span>}
         <span className="calendar-date-items" aria-hidden="true">{visibleItems.map((item) => <span key={item.id} className={`calendar-item-chip ${item.state === 'eaten' ? 'is-eaten' : 'is-planned'}`}>{item.state === 'eaten' ? readEatenSnapshot(item.eaten_snapshot)?.name ?? 'Logged meal' : plannedItemName(item.planned_payload) ?? 'Planned meal'}</span>)}{day.items.length > visibleItems.length && <span className="calendar-more-items">+{day.items.length - visibleItems.length} more</span>}</span>
-        {(summary.eatenCount > 0 || summary.plannedCount > 0) && <span className="calendar-date-foot">{summary.eatenCount ? calories === null ? 'Calories unknown' : `${number(calories)} kcal eaten` : `${summary.plannedCount} planned`}</span>}
       </button>;
     })}</div>
   </section>;

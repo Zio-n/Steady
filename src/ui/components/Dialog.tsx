@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 
 type DialogProps = {
@@ -6,10 +6,12 @@ type DialogProps = {
   title: string;
   onClose: () => void;
   closeDisabled?: boolean;
+  className?: string;
+  style?: CSSProperties;
   children: ReactNode;
 };
 
-export function Dialog({ open, title, onClose, closeDisabled = false, children }: DialogProps) {
+export function Dialog({ open, title, onClose, closeDisabled = false, className = '', style, children }: DialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
 
@@ -43,7 +45,7 @@ export function Dialog({ open, title, onClose, closeDisabled = false, children }
   }, [open]);
 
   return (
-    <dialog ref={dialogRef} className="app-dialog" aria-labelledby={titleId} tabIndex={-1} onKeyDown={keepTabFocusInside} onCancel={(event) => { if (closeDisabled) event.preventDefault(); }} onClose={() => { if (!closeDisabled) onClose(); }}>
+    <dialog ref={dialogRef} className={`app-dialog ${className}`} style={style} aria-labelledby={titleId} tabIndex={-1} onKeyDown={keepTabFocusInside} onCancel={(event) => { if (closeDisabled) event.preventDefault(); }} onClose={() => { if (!closeDisabled) onClose(); }}>
       <header className="dialog-header"><h2 id={titleId}>{title}</h2><button className="icon-button" type="button" aria-label="Close dialog" disabled={closeDisabled} onClick={() => dialogRef.current?.close()}><X size={18} /></button></header>
       <div className="dialog-content">{children}</div>
     </dialog>

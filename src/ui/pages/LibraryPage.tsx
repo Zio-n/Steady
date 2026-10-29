@@ -28,7 +28,7 @@ export function LibraryPage() {
   const [editing, setEditing] = useState<FoodWithNutrients | null>(null);
   const [editingMeal, setEditingMeal] = useState<SavedMeal | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [isCreatingMeal, setIsCreatingMeal] = useState(false);
+  const [isCreatingMeal, setIsCreatingMeal] = useState(() => new URLSearchParams(window.location.search).get('create') === '1');
   const [deleteCandidate, setDeleteCandidate] = useState<FoodWithNutrients | null>(null);
   const [pageNotice, setPageNotice] = useState('');
   const [pageError, setPageError] = useState('');

@@ -17,7 +17,7 @@ export type CalendarDay = {
 export type CalendarChoice = {
   requestId: string;
   localDate: string;
-  section: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  section: 'breakfast' | 'lunch' | 'dinner' | 'snack' | 'unlabelled';
   sourceKind: 'food' | 'meal' | 'one_off_food' | 'one_off_meal';
   sourceId: string | null;
   amount: number;

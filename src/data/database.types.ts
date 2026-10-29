@@ -528,7 +528,7 @@ isOneToOne: false
                            }
           }
           Enums: {
-            "allocation_kind": "recurring"|"one_off","carry_action": "none"|"single_day"|"spread","carry_state": "active"|"reversed"|"superseded","day_item_source": "food"|"meal"|"routine","day_item_state": "planned"|"eaten"|"removed","day_status": "open"|"completed","meal_section": "breakfast"|"lunch"|"dinner"|"snack","routine_slot_mode": "fixed"|"shuffle"
+            "allocation_kind": "recurring"|"one_off","carry_action": "none"|"single_day"|"spread","carry_state": "active"|"reversed"|"superseded","day_item_source": "food"|"meal"|"routine","day_item_state": "planned"|"eaten"|"removed","day_status": "open"|"completed","meal_section": "breakfast"|"lunch"|"dinner"|"snack"|"unlabelled","routine_slot_mode": "fixed"|"shuffle"
           }
           CompositeTypes: {
             [_ in never]: never
@@ -648,7 +648,7 @@ export const Constants = {
           }
         },"public": {
           Enums: {
-            "allocation_kind": ["recurring", "one_off"],"carry_action": ["none", "single_day", "spread"],"carry_state": ["active", "reversed", "superseded"],"day_item_source": ["food", "meal", "routine"],"day_item_state": ["planned", "eaten", "removed"],"day_status": ["open", "completed"],"meal_section": ["breakfast", "lunch", "dinner", "snack"],"routine_slot_mode": ["fixed", "shuffle"]
+            "allocation_kind": ["recurring", "one_off"],"carry_action": ["none", "single_day", "spread"],"carry_state": ["active", "reversed", "superseded"],"day_item_source": ["food", "meal", "routine"],"day_item_state": ["planned", "eaten", "removed"],"day_status": ["open", "completed"],"meal_section": ["breakfast", "lunch", "dinner", "snack", "unlabelled"],"routine_slot_mode": ["fixed", "shuffle"]
           }
         }
 } as const
