@@ -12,7 +12,7 @@ import { UnitPicker } from '../../ui/components/UnitPicker';
 import { StatusMessage } from '../../ui/components/StatusMessage';
 import type { PreparedChoice } from './AddChoiceDialog';
 
-export function OneOffFoodForm({ userId, fields, futureDate, section, onPrepared, onSavedOnly, onDirtyChange, onAddIngredients, extraFields }: {
+export function OneOffFoodForm({ userId, fields, futureDate, section, onPrepared, onSavedOnly, onDirtyChange, onAddIngredients, extraFields, purpose = 'day' }: {
   userId: string;
   fields: NutrientField[];
   futureDate: boolean;
@@ -22,6 +22,7 @@ export function OneOffFoodForm({ userId, fields, futureDate, section, onPrepared
   onDirtyChange: (dirty: boolean) => void;
   onAddIngredients?: (name: string, hasNutritionEdits: boolean) => void;
   extraFields?: ReactNode;
+  purpose?: 'day' | 'builder';
 }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
@@ -63,7 +64,7 @@ export function OneOffFoodForm({ userId, fields, futureDate, section, onPrepared
       setError('Add a name and valid positive amount/unit. Calories and nutrients may be left unknown, but must be non-negative when entered.');
       return;
     }
-    if (mode === 'add' && !futureDate && !preview.canLog) {
+    if (mode === 'add' && purpose === 'day' && !futureDate && !preview.canLog) {
       setError('Calories need to be known before this food can be logged.');
       return;
     }
@@ -101,14 +102,14 @@ export function OneOffFoodForm({ userId, fields, futureDate, section, onPrepared
       <div className="food-nutrient-list"><p className="food-nutrient-caption">Values per {basisAmount || '—'} {basisUnit || 'unit'}</p>
         <div className="food-nutrient-row"><label htmlFor="oneoff-calories">Calories</label><div className="food-nutrient-value"><input id="oneoff-calories" type="number" className="text-field" min={0} max={99_999_999} step="any" value={calories} onChange={(event) => setCalories(event.target.value)} /><span>kcal</span></div><span aria-hidden="true" /></div>
         {selectedFields.map((field) => <div className="food-nutrient-row" key={field.field_id}><label htmlFor={`oneoff-${field.field_id}`}>{field.name}</label><div className="food-nutrient-value"><input id={`oneoff-${field.field_id}`} type="number" className="text-field" min={0} max={99_999_999} step="any" value={nutrients[field.field_id] ?? ''} onChange={(event) => setNutrients((current) => ({ ...current, [field.field_id]: event.target.value }))} /><span>{field.unit}</span></div><button className="food-nutrient-remove" type="button" aria-label={`Remove ${field.name}`} onClick={() => { setSelectedFieldIds((current) => current.filter((id) => id !== field.field_id)); setNutrients((current) => { const next = { ...current }; delete next[field.field_id]; return next; }); }}><X size={17} /></button></div>)}
-        <p className="field-hint">Calories are needed to log this food as eaten.</p>
+        {purpose === 'day' && <p className="field-hint">Calories are needed to log this food as eaten.</p>}
       </div>
       {availableFields.length > 0 && <div className="food-nutrient-picker" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setNutrientOpen(false); }}><button className="food-nutrient-add" type="button" aria-expanded={nutrientOpen} aria-controls="oneoff-nutrient-options" onClick={() => { setNutrientSearch(''); setNutrientOpen((current) => !current); }}><Plus size={16} /> Add nutrient <ChevronDown size={15} /></button>{nutrientOpen && <div id="oneoff-nutrient-options" className="food-nutrient-options"><label className="food-nutrient-search"><Search size={15} aria-hidden="true" /><span className="visually-hidden">Search nutrients</span><input autoFocus type="search" placeholder="Find a nutrient" value={nutrientSearch} onChange={(event) => setNutrientSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setNutrientOpen(false); }} /></label><div className="food-nutrient-options-list">{filteredAvailableFields.map((field) => <button key={field.field_id} type="button" onClick={() => { setSelectedFieldIds((current) => [...current, field.field_id]); setNutrientOpen(false); setNutrientSearch(''); }}>{field.name}<span>{field.unit}</span></button>)}{filteredAvailableFields.length === 0 && <p>No matching nutrients</p>}</div></div>}</div>}
     </div>
-    <div className="food-entry-group"><div className="food-entry-group-heading"><strong>Amount to add</strong><span>How much you ate or plan to eat.</span></div><div className="choice-portion-fields"><NumericField id="oneoff-portion-amount" label="Amount" min={0.0001} max={99_999_999} step="any" value={amount} onChange={(event) => setAmount(event.target.value)} /><UnitPicker id="oneoff-portion-unit" value={unit} onChange={setUnit} /></div>{!preview.ok && <p className="field-error" role="alert">{preview.reason === 'incompatible_unit' || preview.reason === 'unknown_serving_weight' ? 'Use a unit that matches the nutrition quantity above.' : 'Enter positive amounts for the nutrition quantity and amount to add.'}</p>}
+    <div className="food-entry-group"><div className="food-entry-group-heading"><strong>Amount to add</strong><span>{purpose === 'builder' ? 'How much of this food goes in the meal.' : 'How much you ate or plan to eat.'}</span></div><div className="choice-portion-fields"><NumericField id="oneoff-portion-amount" label="Amount" min={0.0001} max={99_999_999} step="any" value={amount} onChange={(event) => setAmount(event.target.value)} /><UnitPicker id="oneoff-portion-unit" value={unit} onChange={setUnit} /></div>{!preview.ok && <p className="field-error" role="alert">{preview.reason === 'incompatible_unit' || preview.reason === 'unknown_serving_weight' ? 'Use a unit that matches the nutrition quantity above.' : 'Enter positive amounts for the nutrition quantity and amount to add.'}</p>}
     </div>
     {preview.ok && <dl className="food-portion-values"><div><dt>Calories for this amount</dt><dd>{preview.caloriesKcal === null ? 'Unknown' : `${preview.caloriesKcal.toLocaleString(undefined, { maximumFractionDigits: 2 })} kcal`}</dd></div>{selectedFields.map((field) => <div key={field.field_id}><dt>{field.name}</dt><dd>{preview.nutrients[field.field_id] === null ? `Unknown ${field.unit}` : `${preview.nutrients[field.field_id]?.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${field.unit}`}</dd></div>)}</dl>}
     {extraFields}
-    <div className="one-off-actions"><Button type="submit" disabled={!preview.ok || saveMutation.isPending}>{saveMutation.isPending ? 'Saving…' : futureDate ? 'Add to plan' : 'Log as eaten'}</Button><Button className="one-off-save-library" variant="secondary" type="button" aria-label="Save to Library only" title="Save to Library only" disabled={!preview.ok || saveMutation.isPending} onClick={() => void persist('save')}><BookmarkPlus size={20} strokeWidth={1.8} aria-hidden="true" /></Button></div>
+    <div className="one-off-actions"><Button type="submit" disabled={!preview.ok || saveMutation.isPending}>{saveMutation.isPending ? 'Saving…' : purpose === 'builder' ? 'Add to meal' : futureDate ? 'Add to plan' : 'Log as eaten'}</Button><Button className="one-off-save-library" variant="secondary" type="button" aria-label="Save to Library only" title="Save to Library only" disabled={!preview.ok || saveMutation.isPending} onClick={() => void persist('save')}><BookmarkPlus size={20} strokeWidth={1.8} aria-hidden="true" /></Button></div>
   </form>;
 }

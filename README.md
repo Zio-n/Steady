@@ -5,6 +5,8 @@ Steady is a personal food tracker PWA. The current product brief and implementat
 - [Current build brief](https://app.notion.com/p/3bbdc7f9b1cb80a2a44ef91e8887b3f6)
 - [0→1 implementation plan](https://app.notion.com/p/3eddc7f9b1cb817b8611c5190d48c5c1)
 
+The agreed [food visual language and AI classification approach](docs/food-visual-system.md) is documented in this repository.
+
 The visual reference is `/Users/zion/Documents/Temp_Steady/steady-site/index.html`. Its HTML/CSS has been inspected; a rendered comparison is still pending. Manrope is bundled locally so the interface does not depend on a third-party font request at runtime.
 
 ## Stack

@@ -23,6 +23,7 @@ export const router = createBrowserRouter([{
           { index: true, lazy: async () => ({ Component: (await import('./ui/pages/CalendarPage')).CalendarPage }) },
           { path: 'calendar', element: <Navigate to="/" replace /> },
           { path: 'library', lazy: async () => ({ Component: (await import('./ui/pages/LibraryPage')).LibraryPage }) },
+          { path: 'build', lazy: async () => ({ Component: (await import('./ui/pages/MealBuilderPage')).MealBuilderPage }) },
           { path: 'routine', element: <Navigate to="/" replace /> },
           { path: 'profile', element: <Navigate to="/settings" replace /> },
           { path: 'settings', lazy: async () => ({ Component: (await import('./ui/pages/ProfilePage')).ProfilePage }) },

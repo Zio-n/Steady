@@ -29,7 +29,7 @@ export function AppNavigation({ open, onToggle, onClose, onCalendarHeaderHost }:
     <header className="topbar">
       <button ref={menuRef} className="menu-trigger" type="button" aria-label={open ? 'Close menu' : 'Open menu'} aria-controls="app-sidebar" aria-expanded={open} onClick={onToggle}><Menu size={22} strokeWidth={1.8} /></button>
       <NavLink className="wordmark" to="/" aria-label="Steady home">steady<span>.</span></NavLink>
-      {!isCalendar && <span className="topbar-context">{pathname === '/library' ? 'Library' : pathname === '/explore' ? 'Explore' : 'Settings'}</span>}
+      {!isCalendar && <span className="topbar-context">{pathname === '/library' ? 'Library' : pathname === '/build' ? 'Build a meal' : pathname === '/explore' ? 'Explore' : 'Settings'}</span>}
       {isCalendar && <div ref={onCalendarHeaderHost} className="calendar-header-controls" id="calendar-header-controls" />}
     </header>
     <aside id="app-sidebar" className={`sidebar-dialog${open ? ' is-open' : ''}`} aria-label="Main menu" aria-hidden={!open} inert={!open}>
