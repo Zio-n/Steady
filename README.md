@@ -1,11 +1,11 @@
 # Steady
 
-Steady is a personal food tracker PWA. The current product brief and implementation plan live in Notion:
+Steady is a calendar-first food tracker PWA. The current product brief and build plan live in Notion:
 
-- [Current build brief](https://app.notion.com/p/3bbdc7f9b1cb80a2a44ef91e8887b3f6)
-- [0→1 implementation plan](https://app.notion.com/p/3eddc7f9b1cb817b8611c5190d48c5c1)
+- [Current product scope](https://app.notion.com/p/406dc7f9b1cb8122894bef1f6c77f554)
+- [Build plan](https://app.notion.com/p/403dc7f9b1cb814ca6c6ddf402d57aa9)
 
-The agreed [food visual language and AI classification approach](docs/food-visual-system.md) is documented in this repository.
+The [current implementation checkpoint](docs/product-reset-and-semi-rebuild-plan.md#current-checkpoint), [food enrichment tracker](docs/food-data-enrichment-tracker.md), and agreed [food visual language](docs/food-visual-system.md) are documented here. Ingredient and recipe cost estimates are parked for possible future work.
 
 The visual reference is `/Users/zion/Documents/Temp_Steady/steady-site/index.html`. Its HTML/CSS has been inspected; a rendered comparison is still pending. Manrope is bundled locally so the interface does not depend on a third-party font request at runtime.
 

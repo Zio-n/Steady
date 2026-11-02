@@ -29,10 +29,12 @@ type NumericFieldProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'i
 };
 
 export function NumericField({ id, label, hint, error, ...inputProps }: NumericFieldProps) {
-  const describedBy = [hint && `${id}-hint`, error && `${id}-error`].filter(Boolean).join(' ') || undefined;
+  const inputAriaInvalid = inputProps['aria-invalid'];
+  const describedBy = [inputProps['aria-describedby'], hint && `${id}-hint`, error && `${id}-error`]
+    .filter(Boolean).join(' ') || undefined;
   return (
     <Field id={id} label={label} hint={hint} error={error}>
-      <input {...inputProps} id={id} type="number" className="text-field" aria-invalid={Boolean(error)} aria-describedby={describedBy} />
+      <input {...inputProps} id={id} type="number" className="text-field" aria-invalid={error ? true : inputAriaInvalid} aria-describedby={describedBy} />
     </Field>
   );
 }

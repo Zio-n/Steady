@@ -1,9 +1,16 @@
 # Steady product reset and semi-rebuild implementation plan
 
 **Prepared:** 27 October 2026  
-**Status:** R0 complete; calendar-first private diary vertical slice implemented locally. Full database/build checks pass; completed-day corrections and authenticated UI smoke remain. See [reset execution log](reset-execution-log.md).
+**Status (2 November 2026):** The calendar-first private diary slice and local food catalogue are implemented. Both the meal builder and calendar log/plan picker search private and shared foods; a catalogue choice opens a correction step and saves a private, source-linked copy with compatible normalized nutrients. A synthetic 30-query sample and local latency check are recorded in the [catalogue review](food-catalogue-import-progress.md). The 500-query frequency-weighted coverage gate remains open. Cost is shelved. Typecheck, lint, and production build pass; this is not a completed product or release gate. See [reset execution log](reset-execution-log.md) and [food enrichment tracker](food-data-enrichment-tracker.md).
 
 **Purpose:** Give a future implementation pass an ordered, testable route from the current routine-centred prototype to the current calendar-first product. The first delivery checkpoint is a safe, runnable reset baseline; the later checkpoints build the new product on it.
+
+### Current checkpoint
+
+- **Built locally:** auth and private foods/meals; calendar day/week/month navigation with private log/plan actions and eaten snapshots; a separate shared catalogue of 918,189 imported foods; nutrient-unit cleanup, aliases, source-labelled search, verified portions, and allergen-source separation. Meal building and calendar logging/planning search private and shared foods. Catalogue selection creates a private source-linked copy, offers corrections before adding, maps compatible normalized nutrients, and tracks later private edits.
+- **Next product slice:** finish the catalogue quality gate: expand the synthetic sample into a frequency-weighted set of at least 500 realistic searches, improve UK-branded coverage and exact-variant ranking, and review portion usability. Then unify calculate/save/log/plan around one draft.
+- **Later slices:** deeper recipe/meal composition, optional practical recipe details, explicit repeats, public recipes/collections and privacy gates, then release verification. The current Explore page is a placeholder. Programmatic food/meal/recipe visuals are documented but not implemented in the app.
+- **Out of current scope:** ingredient and recipe costs, cost matching and currency conversion; billing, paid creator/team features, and retailer-specific prices. Historical local cost research is archived in a private database schema and described in the [coverage review](ingredient-cost-coverage-review.md).
 
 ## 1. Decision basis and scope precedence
 
@@ -17,7 +24,7 @@ The [subscription/operator proposal](https://app.notion.com/p/406dc7f9b1cb819693
 2. One meal builder starts empty or from saved/recent/public recipe, shows live known nutrition, and supports calculate-only, save, log now, or plan for a selected date. Foods, quantities, custom foods, and calories-only blocks are available. Unknown protein/macros remain unknown.
 3. The user can reuse a saved meal in a few taps, see remaining daily targets, and keep their diary and targets private.
 4. Explore is secondary: public recipe detail, creator profile, collections, search/filter, link sharing, copy/personalise, report, and unpublish. Viewing a public recipe does not require an account.
-5. Cost and effort fields are optional, user-entered, and shown only where known. Explicit calorie transfers and forward allocations are optional tools, never automatic debt.
+5. Time, equipment, and cleanup estimates are optional and shown only where known. Ingredient and recipe costs are parked for possible later work. Explicit calorie transfers and forward allocations are optional tools, never automatic debt.
 
 ### Explicit exclusions for this implementation
 
@@ -106,13 +113,13 @@ Each slice requires schema/API, UI, acceptance checks, and a brief migration not
 
 **Dependencies:** R0–R2. Before a catalogue implementation, assemble a representative UK query set from target-user meals: common ingredients, supermarket branded foods, serving variants, and ambiguous names. Define required fields (name, brand where applicable, kcal and protein basis, unit, provenance/licence, missing fields, update timestamp). Evaluate free candidates called out by [Data & Nutrition Rules](https://app.notion.com/p/403dc7f9b1cb819b97a5ecd7d1fa17dc), including USDA FoodData Central and Open Food Facts, for terms, coverage, accuracy, query latency, and operational limits. CoFID may be a generic-composition supplement, not the assumed main consumer catalogue. Record evidence and a go/no-go threshold **before** choosing ingestion or live lookup. A free source that fails the realistic query set is insufficient even if its dataset is large.
 
-**Build:** a source-labelled search ranking exact/branded/personal matches sensibly with conventional text search; deduplicate obvious duplicates; show basis, brand, and missing nutrition. Let the user select a close match and save a private corrected copy with a short kcal/protein/basis edit. Preserve the original source and mark the copy as personally adjusted. Keep fast manual food creation. Use a local indexed subset, public API, or hybrid only after the benchmark demonstrates adequate quality and cost; budget hosting/storage/API usage even when data licences are free. Barcode remains a later usability decision and AI is not a dependency.
+**Build status:** source-labelled, locale-hinted token-prefix search and selection are connected in the meal builder and calendar log/plan picker. Search indexes span names, brands, and aliases; generic results rank ahead of brand-only coincidences. A short correction step offers name, basis amount, calories, and the user's available nutrient fields. Compatible normalized values are copied to an owner-private food; a private origin table retains the source and marks later user edits. Search latency measured 102 ms for one common local query after adding SR Legacy. A synthetic 30-query sample returned a candidate for 27 queries, but only 3/6 UK-branded queries and some results do not match the requested variant. Expand to a frequency-weighted 500-query set and improve coverage/precision before treating B1 as done. Keep fast manual food creation. Barcode remains a later usability decision and AI is not a dependency.
 
 **Acceptance:** representative queries have documented hit quality and latency; the user can correct a close match quickly; corrections affect only their copy, never the shared source or past eaten snapshots; missing data is labelled; no paid-data or AI dependency is introduced without a separate evidence-backed decision. If no free mix meets the threshold, stop and report the gap rather than ship a misleading catalogue.
 
 ### B2 — Unified calculator and meal composition
 
-**Dependencies:** B1 search/selection contract, R1 schema. Replace separate `OneOffFoodForm`, `OneOffMealForm`, and `MealEditor` user flows with one draft model: ingredient quantity/unit, custom food, calories-only block, optional label, and live totals. Support entry from empty, saved meal, recent choice, or (later) public recipe. Add optional effort/cost fields behind an expanded section. Keep calculation in a pure TypeScript module and mirror authoritative capture/validation in SQL; use one payload contract for calculate-only, save, log, and plan actions. Calculate-only must not write to the database or require an account if offered as the free preview.
+**Dependencies:** B1 search/selection contract, R1 schema. Replace separate `OneOffFoodForm`, `OneOffMealForm`, and `MealEditor` user flows with one draft model: ingredient quantity/unit, custom food, calories-only block, optional label, and live totals. Support entry from empty, saved meal, recent choice, or (later) public recipe. Keep optional time/equipment/cleanup details behind an expanded section; cost is outside this slice. Keep calculation in a pure TypeScript module and mirror authoritative capture/validation in SQL; use one payload contract for calculate-only, save, log, and plan actions. Calculate-only must not write to the database or require an account if offered as the free preview.
 
 **Acceptance:** known values scale with supported conversions; unknown protein/macros from a calories-only block remain unknown/partial; bad unit conversions are blocked; calculate-only leaves no records; save/reopen yields the same result; editing a saved meal cannot mutate an older eaten snapshot. Include multi-ingredient and mixed known/unknown cases.
 
@@ -169,7 +176,7 @@ Only after the product works and the commercial/legal decision is documented sho
 
 ## 7. Open decisions, with their point of resolution
 
-- **Food catalogue:** exact free-source mix, licence compatibility, update cadence, coverage threshold, and hosting cost are unresolved until B1 benchmark. CoFID alone should not be assumed sufficient for branded UK lookup.
+- **Food catalogue:** CoFID, global Open Food Facts, USDA FNDDS, USDA Foundation, and 7,793 USDA SR Legacy generic records are imported locally. The synthetic 30-query smoke sample returns candidates for 27 queries, but exact variant quality remains mixed and three branded UK examples have no candidate. A representative, frequency-weighted query benchmark, hosted refresh cadence, and public use of Open Food Facts data still need review before release.
 - **Existing data:** R0 found two accounts and no storage objects in the only data-bearing environment, the local Supabase database. Preserve both accounts and all existing dated history through the migration; the verified backup and isolated restore are recorded in the [execution log](reset-execution-log.md).
 - **Targetless calculation/logging:** R1 should confirm the recommended contract: calculate and log without a target; display remaining allowance only when a target exists.
 - **Legacy generated plans:** R1 must pick a documented cutoff for future routine generation and decide how already materialised planned items appear in the new calendar. Do not discard them silently.

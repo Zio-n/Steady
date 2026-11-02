@@ -129,6 +129,22 @@ export async function logDayItem(input: LogDayItemInput) {
   return data;
 }
 
+/** Logs several foods as separate entries in one transaction, so a meal cannot half-save. */
+export async function logDayItems(inputs: LogDayItemInput[]) {
+  if (!supabase) throw new DataError('Connect Supabase before logging food.', 'configuration');
+  if (inputs.length < 2) throw new DataError('A batch needs at least two entries.', 'validation');
+  const { data, error } = await supabase.rpc('log_day_items', {
+    p_items: inputs.map((input) => ({
+      request_id: input.requestId, local_date: input.localDate, section: input.section,
+      source_kind: input.sourceKind, source_id: input.sourceId, amount: input.amount, unit: input.unit,
+      manual_payload: input.manualPayload ?? null, planned_item_id: input.plannedItemId ?? null,
+      expected_item_revision: input.expectedItemRevision ?? null,
+    })) as unknown as Json,
+  });
+  if (error) throw toDataError(error);
+  return data;
+}
+
 export async function planDayItem(input: PlanDayItemInput) {
   if (!supabase) throw new DataError('Connect Supabase before planning food.', 'configuration');
   const { data, error } = await supabase.rpc('plan_day_item', {
@@ -140,6 +156,21 @@ export async function planDayItem(input: PlanDayItemInput) {
     p_amount: input.amount,
     p_unit: input.unit,
     p_manual_payload: input.manualPayload as Json | undefined,
+  });
+  if (error) throw toDataError(error);
+  return data;
+}
+
+/** Plans several foods as separate entries in one transaction. */
+export async function planDayItems(inputs: PlanDayItemInput[]) {
+  if (!supabase) throw new DataError('Connect Supabase before planning food.', 'configuration');
+  if (inputs.length < 2) throw new DataError('A batch needs at least two entries.', 'validation');
+  const { data, error } = await supabase.rpc('plan_day_items', {
+    p_items: inputs.map((input) => ({
+      request_id: input.requestId, local_date: input.localDate, section: input.section,
+      source_kind: input.sourceKind, source_id: input.sourceId, amount: input.amount, unit: input.unit,
+      manual_payload: input.manualPayload ?? null,
+    })) as unknown as Json,
   });
   if (error) throw toDataError(error);
   return data;

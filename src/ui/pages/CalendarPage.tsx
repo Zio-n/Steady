@@ -7,10 +7,12 @@ import { useAuth } from '../../app/AuthProvider';
 import { useProfile } from '../../features/profile/useProfile';
 import { AddChoiceDialog, type PreparedChoice } from '../../features/today/AddChoiceDialog';
 import { queryKeys } from '../../data/queryKeys';
+import { rememberAddedFoodPortions } from '../../data/repositories/foodPortionPreferenceRepository';
 import { removePlannedDayItem, resizePlannedDayItem, restorePlannedCalendarItem, reviseDayItem, type ReviseDayItemInput } from '../../data/repositories/dayRepository';
-import { logCalendarItem, planCalendarItem, readCalendarDay, readCalendarRange, transferCalendarPlan, type CalendarChoice, type CalendarDay } from '../../data/repositories/calendarRepository';
+import { logCalendarItem, logCalendarItems, planCalendarItem, planCalendarItems, readCalendarDay, readCalendarRange, transferCalendarPlan, type CalendarChoice, type CalendarDay } from '../../data/repositories/calendarRepository';
 import { addLocalDays, addLocalMonths, formatLocalDate, isValidLocalDate, localDateInTimezone, startOfLocalWeek } from '../../domain/dates';
 import { plannedItemName, readEatenSnapshot, readPlannedChoice, summarizeDay, type DayItem } from '../../domain/daySummary';
+import { isValidQuantity, QUANTITY_MAX, QUANTITY_MIN, QUANTITY_STEP } from '../../domain/numericLimits';
 import { Dialog } from '../components/Dialog';
 import { Field, NumericField } from '../components/Field';
 import { LoadingSkeleton } from '../components/LoadingSkeleton';
@@ -47,7 +49,7 @@ export function CalendarPage() {
   const rangeTo = view === 'week' ? addLocalDays(rangeFrom, 6) : addLocalDays(startOfLocalWeek(monthLast), 6);
   const [adding, setAdding] = useState<'log' | 'plan' | null>(() => searchParams.get('start') === 'meal' ? 'log' : null);
   const [composerAnchor, setComposerAnchor] = useState<{ left: number; top: number; width: number } | null>(null);
-  const [pendingChoice, setPendingChoice] = useState<{ action: 'log' | 'plan'; input: CalendarChoice } | null>(null);
+  const [pendingChoice, setPendingChoice] = useState<{ action: 'log' | 'plan'; input: CalendarChoice | CalendarChoice[] } | null>(null);
   const [editingItem, setEditingItem] = useState<DayItem | null>(null);
   const [editAmount, setEditAmount] = useState('');
   const [restoreItem, setRestoreItem] = useState<{ item: DayItem; localDate: string; kind: 'eaten' | 'planned' } | null>(null);
@@ -186,35 +188,47 @@ export function CalendarPage() {
     },
   });
   const planMutation = useMutation({
-    mutationFn: planCalendarItem,
+    mutationFn: (input: CalendarChoice | CalendarChoice[]) => Array.isArray(input) ? planCalendarItems(input) : planCalendarItem(input),
     onSuccess: async (_result, input) => {
-      await refresh(input.localDate);
+      const first = Array.isArray(input) ? input[0]! : input;
+      try {
+        await rememberAddedFoodPortions(userId!, (Array.isArray(input) ? input : [input]).map(({ sourceKind, sourceId, amount, unit, manualPayload }) => ({ sourceKind, sourceId, amount, unit, manualPayload })));
+        await queryClient.invalidateQueries({ queryKey: queryKeys.foodPortionPreferences(userId!) });
+      } catch {
+        // Calendar changes are committed separately from this convenience value.
+      }
+      await refresh(first.localDate);
       setPendingChoice(null);
-      setNotice('Meal planned. It is not counted as eaten.');
+      setNotice(Array.isArray(input) ? `${input.length} items planned. They are not counted as eaten.` : 'Meal planned. It is not counted as eaten.');
     },
   });
   const logMutation = useMutation({
-    mutationFn: logCalendarItem,
+    mutationFn: (input: CalendarChoice | CalendarChoice[]) => Array.isArray(input) ? logCalendarItems(input) : logCalendarItem(input),
     onSuccess: async (_result, input) => {
-      await refresh(input.localDate);
+      const first = Array.isArray(input) ? input[0]! : input;
+      try {
+        await rememberAddedFoodPortions(userId!, (Array.isArray(input) ? input : [input]).map(({ sourceKind, sourceId, amount, unit, manualPayload }) => ({ sourceKind, sourceId, amount, unit, manualPayload })));
+        await queryClient.invalidateQueries({ queryKey: queryKeys.foodPortionPreferences(userId!) });
+      } catch {
+        // Calendar changes are committed separately from this convenience value.
+      }
+      await refresh(first.localDate);
       setPendingChoice(null);
-      setNotice('Meal logged for this date.');
+      setNotice(Array.isArray(input) ? `Logged ${input.length} items for this date.` : 'Meal logged for this date.');
     },
   });
 
-  function submit(choice: PreparedChoice, action: 'log' | 'plan', requestId = crypto.randomUUID()) {
-    const input: CalendarChoice = {
-      requestId,
-      localDate,
-      section: choice.section,
-      sourceKind: choice.kind,
-      sourceId: choice.kind === 'food' || choice.kind === 'meal' ? choice.id : null,
-      amount: choice.amount,
-      unit: choice.unit,
-      manualPayload: choice.snapshot ? { ...choice.snapshot, name: choice.name } : undefined,
-      plannedItemId: choice.plannedItemId,
-      expectedItemRevision: choice.expectedItemRevision,
-    };
+  function submit(choice: PreparedChoice | PreparedChoice[], action: 'log' | 'plan', requestId = crypto.randomUUID()) {
+    const choices = Array.isArray(choice) ? choice : [choice];
+    const inputs = choices.map((entry, index): CalendarChoice => ({
+      requestId: entry.requestId ?? (index === 0 && choices.length === 1 ? requestId : crypto.randomUUID()), localDate,
+      section: entry.section, sourceKind: entry.kind,
+      sourceId: entry.kind === 'food' || entry.kind === 'meal' ? entry.id : null,
+      amount: entry.amount, unit: entry.unit,
+      manualPayload: entry.snapshot ? { ...entry.snapshot, name: entry.name } : undefined,
+      plannedItemId: entry.plannedItemId, expectedItemRevision: entry.expectedItemRevision,
+    }));
+    const input = inputs.length > 1 ? inputs : inputs[0]!;
     setPendingChoice({ action, input });
     setNotice('');
     if (action === 'plan') planMutation.mutate(input);
@@ -389,9 +403,9 @@ export function CalendarPage() {
     <Dialog open={Boolean(editingItem)} title="Edit meal portion" closeDisabled={busy} onClose={() => setEditingItem(null)}>
       {editingItem && <>
         <p>Change this date only. The logged nutrition snapshot will be rescaled from its saved values.</p>
-        <NumericField id="calendar-edit-amount" label={`Amount (${editingItem.selected_unit ?? 'serving'})`} min={0.0001} max={99_999_999} step="any" value={editAmount} onChange={(event) => setEditAmount(event.target.value)} />
+        <NumericField id="calendar-edit-amount" label={`Amount (${editingItem.selected_unit ?? 'serving'})`} min={QUANTITY_MIN} max={QUANTITY_MAX} step={QUANTITY_STEP} value={editAmount} onChange={(event) => setEditAmount(event.target.value)} />
         {(reviseMutation.isError || resizePlanMutation.isError) && <StatusMessage tone="error">The portion could not be updated. Refresh this date and review the entry.</StatusMessage>}
-        <div className="dialog-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => setEditingItem(null)}>Cancel</button><button type="button" className="primary-button" disabled={busy || !Number.isFinite(Number(editAmount)) || Number(editAmount) <= 0} onClick={() => {
+        <div className="dialog-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => setEditingItem(null)}>Cancel</button><button type="button" className="primary-button" disabled={busy || !isValidQuantity(editAmount)} onClick={() => {
           const amount = Number(editAmount);
           if (editingItem.state === 'eaten') reviseMutation.mutate({ requestId: crypto.randomUUID(), localDate, itemId: editingItem.id, expectedRevision: editingItem.revision, action: 'resize', amount, unit: editingItem.selected_unit ?? 'serving' });
           else resizePlanMutation.mutate({ requestId: crypto.randomUUID(), localDate, itemId: editingItem.id, expectedRevision: editingItem.revision, amount });

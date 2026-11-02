@@ -22,6 +22,17 @@ test('serving and gram conversions require declared grams per serving', () => {
   assert.equal(convertFoodAmount(1, 'serving', 'g', null), null);
 });
 
+test('a custom named portion converts only when that exact unit is explicitly mapped', () => {
+  const namedSlice = calculateFoodPortion({ ...oats, servingUnit: 'slice' }, 1, 'slice');
+  assert.equal(namedSlice.ok, true);
+  if (namedSlice.ok) {
+    assert.equal(namedSlice.caloriesKcal, 152);
+    assert.equal(namedSlice.nutrients.protein, 5.28);
+  }
+  assert.equal(calculateFoodPortion(oats, 1, 'slice').ok, false);
+  assert.equal(convertFoodAmount(1, 'slice', 'g', 40), null);
+});
+
 test('portion calculation scales known values but preserves unknown and zero', () => {
   const portion = calculateFoodPortion(oats, 1, 'serving');
 
@@ -69,4 +80,14 @@ test('large finite food amounts remain finite and explicit zero stays zero', () 
   assert.ok(Number.isFinite(portion.multiplier));
   assert.equal(portion.caloriesKcal, 0);
   assert.equal(portion.nutrients.hydration, 0);
+});
+
+test('microgram nutrition math converts correctly at the database quantity boundary', () => {
+  const amount = 100_000_000;
+  const portion = calculateFoodPortion(oats, amount, 'mcg');
+  assert.equal(portion.ok, true);
+  if (portion.ok) {
+    assert.equal(portion.caloriesKcal, 380);
+    assert.equal(portion.nutrients.protein, 13.2);
+  }
 });

@@ -2,6 +2,8 @@ export type PortionFood = {
   basisAmount: number;
   basisUnit: string;
   gramsPerServing: number | null;
+  /** A named/custom unit only converts through the serving weight when explicitly mapped. */
+  servingUnit?: string | null;
   caloriesKcal: number | null;
   nutrients: Record<string, number | null>;
 };
@@ -52,8 +54,8 @@ function unitFor(label: string): Unit {
   return unitAliases[normalized] ?? { key: normalized, dimension: 'custom', toBase: 1 };
 }
 
-/** Convert only equivalent units or a serving/weight pair with a declared serving weight. */
-export function convertFoodAmount(amount: number, fromUnit: string, toUnit: string, gramsPerServing: number | null): number | null {
+/** Convert equivalent units or a serving/basis pair with a declared portion size. */
+export function convertFoodAmount(amount: number, fromUnit: string, toUnit: string, gramsPerServing: number | null, portionDimension: 'mass' | 'volume' | null = null): number | null {
   if (!Number.isFinite(amount) || amount <= 0) return null;
   const from = unitFor(fromUnit);
   const to = unitFor(toUnit);
@@ -62,8 +64,9 @@ export function convertFoodAmount(amount: number, fromUnit: string, toUnit: stri
   if (from.dimension === to.dimension && (from.dimension === 'mass' || from.dimension === 'volume')) {
     return (amount * from.toBase) / to.toBase;
   }
-  if ((from.dimension === 'serving' && to.dimension === 'mass')
-    || (from.dimension === 'mass' && to.dimension === 'serving')) {
+  if ((from.dimension === 'serving' && (to.dimension === 'mass' || to.dimension === 'volume'))
+    || ((from.dimension === 'mass' || from.dimension === 'volume') && to.dimension === 'serving'
+      && (from.dimension === portionDimension || (portionDimension === null && from.dimension === 'mass')))) {
     if (gramsPerServing === null || !Number.isFinite(gramsPerServing) || gramsPerServing <= 0) return null;
     return from.dimension === 'serving'
       ? (amount * gramsPerServing) / to.toBase
@@ -78,12 +81,16 @@ export function calculateFoodPortion(food: PortionFood, amount: number, unit: st
   if (!Number.isFinite(food.basisAmount) || food.basisAmount <= 0 || !food.basisUnit.trim()) {
     return { ok: false, reason: 'invalid_basis' };
   }
-  const amountInBasisUnit = convertFoodAmount(amount, unit, food.basisUnit, food.gramsPerServing);
+  const basisDimension = unitFor(food.basisUnit).dimension;
+  const normalizedUnit = food.servingUnit && unit.trim().toLocaleLowerCase('en-US') === food.servingUnit.trim().toLocaleLowerCase('en-US')
+    ? 'serving' : unit;
+  const amountInBasisUnit = convertFoodAmount(amount, normalizedUnit, food.basisUnit, food.gramsPerServing,
+    basisDimension === 'mass' || basisDimension === 'volume' ? basisDimension : null);
   if (amountInBasisUnit === null) {
-    const from = unitFor(unit);
+    const from = unitFor(normalizedUnit);
     const to = unitFor(food.basisUnit);
-    const servingWeightNeeded = (from.dimension === 'serving' && to.dimension === 'mass')
-      || (from.dimension === 'mass' && to.dimension === 'serving');
+    const servingWeightNeeded = (from.dimension === 'serving' && (to.dimension === 'mass' || to.dimension === 'volume'))
+      || ((from.dimension === 'mass' || from.dimension === 'volume') && to.dimension === 'serving');
     return { ok: false, reason: servingWeightNeeded && food.gramsPerServing === null ? 'unknown_serving_weight' : 'incompatible_unit' };
   }
   const multiplier = amountInBasisUnit / food.basisAmount;

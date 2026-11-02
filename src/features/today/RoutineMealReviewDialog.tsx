@@ -36,6 +36,7 @@ export function RoutineMealReviewDialog({ open, userId, item, fields, pending, o
         basisAmount: component.food.basis_amount,
         basisUnit: component.food.basis_unit,
         gramsPerServing: component.food.grams_per_serving,
+        servingUnit: component.food.default_portion_unit,
         caloriesKcal: component.food.calories_kcal,
         nutrients: Object.fromEntries(fields.map((field) => [field.field_id, component.nutrients[field.field_id] ?? null])),
       } : null,

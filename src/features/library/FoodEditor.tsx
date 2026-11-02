@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import type { NutrientField } from '../../data/repositories/profileRepository';
 import { saveFood, type FoodWithNutrients, type SaveFoodInput } from '../../data/repositories/foodRepository';
 import { calculateFoodPortion } from '../../domain/foodNutrition';
+import { CALORIE_MAX, CALORIE_STEP, isValidCalorie, isValidNutrient, isValidQuantity, NUTRIENT_MAX, NUTRIENT_STEP, QUANTITY_MAX, QUANTITY_MIN, QUANTITY_STEP } from '../../domain/numericLimits';
 import { Button } from '../../ui/components/Button';
 import { Field, NumericField } from '../../ui/components/Field';
 import { StatusMessage } from '../../ui/components/StatusMessage';
@@ -38,13 +39,13 @@ function draftFromFood(food: FoodWithNutrients | null, fields: NutrientField[]):
 function parsePositive(value: string) {
   if (!value.trim()) return null;
   const number = Number(value);
-  return Number.isFinite(number) && number > 0 && number < 100_000_000 ? number : null;
+  return isValidQuantity(number) ? number : null;
 }
 
-function parseOptionalNonNegative(value: string) {
+function parseOptionalNonNegative(value: string, kind: 'calorie' | 'nutrient' = 'nutrient') {
   if (!value.trim()) return { valid: true as const, value: null };
   const number = Number(value);
-  return Number.isFinite(number) && number >= 0 && number < 100_000_000
+  return (kind === 'calorie' ? isValidCalorie(number) : isValidNutrient(number))
     ? { valid: true as const, value: number }
     : { valid: false as const, value: null };
 }
@@ -68,7 +69,7 @@ export function FoodEditor({
   const saveMutation = useMutation({ mutationFn: saveFood, onSuccess: onSaved, onError: () => setError('We couldn’t save that food. Your library is unchanged; refresh and try again.') });
   const previewBasis = parsePositive(draft.basisAmount);
   const previewGramsPerServing = draft.gramsPerServing.trim() ? parsePositive(draft.gramsPerServing) : null;
-  const previewCalories = parseOptionalNonNegative(draft.caloriesKcal);
+  const previewCalories = parseOptionalNonNegative(draft.caloriesKcal, 'calorie');
   const previewNutrients = Object.fromEntries(fields.map((field) => {
     const parsed = parseOptionalNonNegative(draft.nutrients[field.field_id] ?? '');
     return [field.field_id, parsed.valid ? parsed.value : null];
@@ -78,6 +79,7 @@ export function FoodEditor({
       basisAmount: previewBasis,
       basisUnit: draft.basisUnit,
       gramsPerServing: previewGramsPerServing,
+      servingUnit: draft.defaultPortionUnit,
       caloriesKcal: previewCalories.valid ? previewCalories.value : null,
       nutrients: previewNutrients,
     }, Number(draft.defaultPortionAmount), draft.defaultPortionUnit)
@@ -95,7 +97,7 @@ export function FoodEditor({
     const basisAmount = parsePositive(draft.basisAmount);
     const defaultPortionAmount = parsePositive(draft.defaultPortionAmount);
     const gramsPerServing = draft.gramsPerServing.trim() ? parsePositive(draft.gramsPerServing) : null;
-    const calories = parseOptionalNonNegative(draft.caloriesKcal);
+    const calories = parseOptionalNonNegative(draft.caloriesKcal, 'calorie');
     if (!name || name.length > 160 || brand.length > 120 || !basisAmount || !defaultPortionAmount
       || !draft.basisUnit.trim() || draft.basisUnit.trim().length > 24
       || !draft.defaultPortionUnit.trim() || draft.defaultPortionUnit.trim().length > 24
@@ -141,32 +143,32 @@ export function FoodEditor({
           <Field id={`${requestKey}-name`} label="Food name">
             <input className="text-field" id={`${requestKey}-name`} value={draft.name} maxLength={160} autoComplete="off" onChange={(event) => setField('name', event.target.value)} />
           </Field>
-          <Field id={`${requestKey}-brand`} label="Brand (optional)">
+          <Field id={`${requestKey}-brand`} label="Brand">
             <input className="text-field" id={`${requestKey}-brand`} value={draft.brand} maxLength={120} autoComplete="off" onChange={(event) => setField('brand', event.target.value)} />
           </Field>
         </div>
 
         <div className="food-amount-fields">
-          <NumericField id={`${requestKey}-basis-amount`} label="Nutrient basis amount" min={0.0001} max={99999999} step="any" value={draft.basisAmount} onChange={(event) => setField('basisAmount', event.target.value)} />
+          <NumericField id={`${requestKey}-basis-amount`} label="Nutrient basis amount" min={QUANTITY_MIN} max={QUANTITY_MAX} step={QUANTITY_STEP} value={draft.basisAmount} onChange={(event) => setField('basisAmount', event.target.value)} />
           <Field id={`${requestKey}-basis-unit`} label="Basis unit">
             <input className="text-field" id={`${requestKey}-basis-unit`} value={draft.basisUnit} maxLength={24} onChange={(event) => setField('basisUnit', event.target.value)} />
           </Field>
-          <NumericField id={`${requestKey}-default-amount`} label="Default portion amount" min={0.0001} max={99999999} step="any" value={draft.defaultPortionAmount} onChange={(event) => setField('defaultPortionAmount', event.target.value)} />
+          <NumericField id={`${requestKey}-default-amount`} label="Default portion amount" min={QUANTITY_MIN} max={QUANTITY_MAX} step={QUANTITY_STEP} value={draft.defaultPortionAmount} onChange={(event) => setField('defaultPortionAmount', event.target.value)} />
           <Field id={`${requestKey}-default-unit`} label="Default portion unit">
             <input className="text-field" id={`${requestKey}-default-unit`} value={draft.defaultPortionUnit} maxLength={24} onChange={(event) => setField('defaultPortionUnit', event.target.value)} />
           </Field>
-          <NumericField id={`${requestKey}-grams-per-serving`} label="Grams per serving (optional)" min={0.0001} max={99999999} step="any" value={draft.gramsPerServing} onChange={(event) => setField('gramsPerServing', event.target.value)} />
+          <NumericField id={`${requestKey}-grams-per-serving`} label="Grams per serving" min={QUANTITY_MIN} max={QUANTITY_MAX} step={QUANTITY_STEP} value={draft.gramsPerServing} onChange={(event) => setField('gramsPerServing', event.target.value)} />
         </div>
         <p className="field-hint">Values below describe the nutrient basis amount. Grams per serving is only used when the serving weight is known.</p>
 
         <div className="food-nutrient-fields">
           <h3>Nutrients per {draft.basisAmount || 'basis amount'} {draft.basisUnit.trim() || 'unit'}</h3>
-          <NumericField id={`${requestKey}-calories`} label="Calories (kcal)" min={0} max={99999999} step="any" value={draft.caloriesKcal} onChange={(event) => setField('caloriesKcal', event.target.value)} />
+          <NumericField id={`${requestKey}-calories`} label="Calories (kcal)" min={0} max={CALORIE_MAX} step={CALORIE_STEP} value={draft.caloriesKcal} onChange={(event) => setField('caloriesKcal', event.target.value)} />
           {!draft.caloriesKcal.trim() && <p className="field-hint">Leave blank if unknown. This food cannot be logged until its calories are known.</p>}
           {fields.map((field) => (
-            <NumericField key={field.field_id} id={`${requestKey}-nutrient-${field.field_id}`} label={`${field.name} (${field.unit})`} min={0} max={99999999} step="any" value={draft.nutrients[field.field_id] ?? ''} onChange={(event) => setDraft((current) => ({ ...current, nutrients: { ...current.nutrients, [field.field_id]: event.target.value } }))} />
+            <NumericField key={field.field_id} id={`${requestKey}-nutrient-${field.field_id}`} label={`${field.name} (${field.unit})`} min={0} max={NUTRIENT_MAX} step={NUTRIENT_STEP} value={draft.nutrients[field.field_id] ?? ''} onChange={(event) => setDraft((current) => ({ ...current, nutrients: { ...current.nutrients, [field.field_id]: event.target.value } }))} />
           ))}
-          {fields.length === 0 && <p className="field-hint">Add optional nutrient definitions in Profile to record them for foods.</p>}
+          {fields.length === 0 && <p className="field-hint">Add nutrient definitions in Profile to record more food values.</p>}
         </div>
         <section className="food-portion-preview" aria-live="polite" aria-labelledby={`${requestKey}-preview-heading`}>
           <div><p className="eyebrow">PORTION CHECK</p><h3 id={`${requestKey}-preview-heading`}>Default portion: {draft.defaultPortionAmount || '—'} {draft.defaultPortionUnit || 'unit'}</h3></div>

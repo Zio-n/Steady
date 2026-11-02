@@ -72,7 +72,7 @@ export function CalendarSetupPage() {
       <form className="profile-form" onSubmit={handleSubmit} noValidate>
         {formError && <StatusMessage tone="error">{formError}</StatusMessage>}
         {save.isError && <StatusMessage tone="error">We couldn’t confirm setup. Retry to safely check the same request.</StatusMessage>}
-        <NumericField id="daily-target" label="Daily calorie target · optional" hint="Whole kcal. This is your preference, not a recommendation." min={1} max={999999} step={1} inputMode="numeric" value={target} onChange={(event) => setTarget(event.target.value)} />
+        <NumericField id="daily-target" label="Daily calorie target" hint="Whole kcal. This is your preference, not a recommendation." min={1} max={999999} step={1} inputMode="numeric" value={target} onChange={(event) => setTarget(event.target.value)} />
         <div className="form-field"><label className="field-label" htmlFor="account-timezone">Your timezone</label>
           <input id="account-timezone" className="text-field" type="text" autoComplete="off" value={timezone} onChange={(event) => { setTimezone(event.target.value); setTimezoneConfirmed(false); }} aria-describedby="timezone-hint" />
           <p className="field-hint" id="timezone-hint">The browser suggested {browserTimezone}. Dates follow the timezone you confirm.</p>

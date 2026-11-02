@@ -16,10 +16,12 @@ function escapeLike(value: string) {
 }
 
 /** Load the saved-meal library and its recipe rows without relying on live joins. */
-export async function loadMeals(userId: string, search = ''): Promise<SavedMeal[]> {
+export async function loadMeals(userId: string, search = '', limit?: number, sort: 'name' | 'recent' = 'name'): Promise<SavedMeal[]> {
   if (!supabase) throw new DataError('Connect Supabase before loading saved meals.', 'configuration');
-  let mealsQuery = supabase.from('meals').select('*').eq('user_id', userId).is('archived_at', null).order('name');
+  let mealsQuery = supabase.from('meals').select('*').eq('user_id', userId).is('archived_at', null);
+  mealsQuery = sort === 'recent' ? mealsQuery.order('created_at', { ascending: false }) : mealsQuery.order('name');
   if (search.trim()) mealsQuery = mealsQuery.ilike('name', `%${escapeLike(search.trim())}%`);
+  if (limit !== undefined) mealsQuery = mealsQuery.limit(Math.min(Math.max(limit, 1), 100));
   const { data: meals, error } = await mealsQuery;
   if (error) throw toDataError(error);
   if (meals.length === 0) return [];

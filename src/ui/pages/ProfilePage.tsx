@@ -78,13 +78,13 @@ export function ProfilePage() {
     <UnsavedChangesPrompt isDirty={nutrientSettingsDirty || targetsDirty || saveMutation.isPending} />
     <div className="profile-heading"><div><p className="eyebrow">YOUR ACCOUNT</p><h1>Settings</h1></div><Button variant="secondary" type="button" onClick={handleSignOut}>Sign out</Button></div>
     {signOutError && <StatusMessage tone="error">{signOutError}</StatusMessage>}
-    <div className="profile-summary-card"><div className="profile-summary-icon"><Target size={20} /></div><div><p className="eyebrow">DAILY TARGET</p><p className="profile-target-number">{currentTarget?.base_daily_target_kcal?.toLocaleString() ?? 'Not set'} <span>kcal</span></p><p className="field-hint">Targets are optional. Remaining allowance appears only when a target is set.</p></div></div>
+    <div className="profile-summary-card"><div className="profile-summary-icon"><Target size={20} /></div><div><p className="eyebrow">DAILY TARGET</p><p className="profile-target-number">{currentTarget?.base_daily_target_kcal?.toLocaleString() ?? 'Not set'} <span>kcal</span></p><p className="field-hint">Remaining allowance appears after you set a target.</p></div></div>
     <section className="profile-section" aria-labelledby="calendar-targets-heading">
       <div className="profile-section-heading"><Target size={18} /><h2 id="calendar-targets-heading">Targets by date</h2></div>
       <p className="field-hint">A change applies from the selected date onward. Past dates keep their original target.</p>
       <div className="calendar-target-form">
         <label className="form-field" htmlFor="target-effective-date"><span className="field-label">Starts on</span><input id="target-effective-date" className="text-field" type="date" min={today} value={effectiveFrom} onChange={(event) => { setEffectiveFromDraft(event.target.value); setTargetsDirty(true); }} /></label>
-        <NumericField id="settings-target" label="Daily calorie target · optional" hint="Clear the field to have no calorie target from that date." min={1} max={999999} step={1} value={target} onChange={(event) => { setTargetDraft(event.target.value); setTargetsDirty(true); }} />
+        <NumericField id="settings-target" label="Daily calorie target" hint="Clear the field to have no calorie target from that date." min={1} max={999999} step={1} value={target} onChange={(event) => { setTargetDraft(event.target.value); setTargetsDirty(true); }} />
       </div>
       {error && <StatusMessage tone="error">{error}</StatusMessage>}{notice && <StatusMessage tone="success">{notice}</StatusMessage>}
       {saveMutation.isError && saveMutation.variables && <Button variant="secondary" type="button" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate(saveMutation.variables)}>Retry same save</Button>}

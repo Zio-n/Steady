@@ -37,13 +37,15 @@ def nutrient(name, unit, value):
     try: value=float(value)
     except (TypeError,ValueError): return None
     if value<0: return None
+    source_value=value
+    source_unit=UNIT.get(unit.upper(),unit.lower())
     key=name.lower().strip()
     if key.startswith("energy") and unit.upper() in ("KCAL", "KJ"):
         code,label,std="energy_kcal","Energy","kcal"
         if unit.upper()=="KJ": value=value/4.184
-        return code,{"nutrient_code":code,"name":label,"standard_unit":std},value,"kcal"
+        return code,{"nutrient_code":code,"name":label,"standard_unit":std},value,"kcal",source_value,source_unit
     code,label,std=COMMON.get(key,("usda_"+slug(key),name.strip(),UNIT.get(unit.upper(),unit.lower())))
-    return code,{"nutrient_code":code,"name":label,"standard_unit":std},value,UNIT.get(unit.upper(),unit.lower())
+    return code,{"nutrient_code":code,"name":label,"standard_unit":std},value,UNIT.get(unit.upper(),unit.lower()),source_value,source_unit
 
 def batches(items,n=100):
     for i in range(0,len(items),n): yield items[i:i+n]
@@ -59,13 +61,15 @@ def fndds(path):
     for p in rows('food_portion.csv'):
         try: grams=float(p.get('gram_weight') or 0)
         except ValueError: continue
-        if grams>0: portions.setdefault(p['fdc_id'],[]).append({"label":(p.get('portion_description') or p.get('modifier') or "portion")[:100],"amount":float(p.get('amount') or 1),"unit":"portion","grams":grams,"is_default":False})
+        if grams>0:
+            rows_for_food=portions.setdefault(p['fdc_id'],[])
+            rows_for_food.append({"label":(p.get('portion_description') or p.get('modifier') or "portion")[:100],"amount":float(p.get('amount') or 1),"unit":"portion","grams":grams,"is_default":not rows_for_food})
     vals={}
     for n in rows('food_nutrient.csv'):
         d=nutrient_rows.get(n.get('nutrient_id'))
         if not d: continue
         item=nutrient(d['name'],d['unit_name'],n.get('amount'))
-        if item: vals.setdefault(n['fdc_id'],{})[item[0]]=(item[1],item[2],item[3],d['name'])
+        if item: vals.setdefault(n['fdc_id'],{})[item[0]]=(item[1],item[2],item[3],d['name'],item[4],item[5])
     out=[]
     for f in rows('food.csv'):
         name=(f.get('description') or '').strip(); key=f.get('fdc_id')
@@ -76,6 +80,43 @@ def fndds(path):
           "country_code":"US","locale":"en-US","basis_amount":100,"basis_unit":"g",
           "source_updated_at":f.get('publication_date'),"quality_status":"usable" if "energy_kcal" in ns else "incomplete",
           "source_metadata":{"data_type":"FNDDS","publication_date":f.get('publication_date')},"nutrients":ns,"portions":portions.get(key,[])})
+    return out
+
+def sr_legacy(path):
+    """Parse USDA's April 2018 SR Legacy tables from its small CSV archive."""
+    with zipfile.ZipFile(path) as z:
+        root=next(n.split("/")[0] for n in z.namelist() if n.endswith("/food.csv"))
+        def rows(file):
+            return list(csv.DictReader(io.TextIOWrapper(z.open(root+"/"+file),encoding="utf-8-sig")))
+        definitions={r["id"]:r for r in rows("nutrient.csv")}
+        categories={r["id"]:r["description"] for r in rows("food_category.csv")}
+        portions={}
+        for p in rows("food_portion.csv"):
+            try: grams=float(p.get("gram_weight") or 0)
+            except (TypeError,ValueError): continue
+            if grams<=0: continue
+            label=(p.get("modifier") or p.get("portion_description") or "portion")[:100]
+            try: amount=float(p.get("amount") or 0)
+            except (TypeError,ValueError): amount=0
+            if amount<=0: amount=1
+            rows_for_food=portions.setdefault(p["fdc_id"],[])
+            rows_for_food.append({"label":label,"amount":amount,"unit":"portion","grams":grams,"is_default":not rows_for_food})
+        values={}
+        for n in rows("food_nutrient.csv"):
+            d=definitions.get(n.get("nutrient_id"))
+            if not d: continue
+            item=nutrient(d.get("name", ""),d.get("unit_name", ""),n.get("amount"))
+            if item: values.setdefault(n["fdc_id"],{})[item[0]]=(item[1],item[2],item[3],d.get("name", ""),item[4],item[5])
+        out=[]
+        for f in rows("food.csv"):
+            key=str(f.get("fdc_id") or ""); name=(f.get("description") or "").strip()
+            if not key or not name: continue
+            ns=values.get(key,{})
+            out.append({"id":str(uuid.uuid5(uuid.NAMESPACE_URL,"usda_sr_legacy:"+key)),"source_id":"usda_sr_legacy","source_record_id":key,
+              "data_kind":"generic","name":name[:240],"category":categories.get(f.get("food_category_id")),
+              "country_code":"US","locale":"en-US","basis_amount":100,"basis_unit":"g",
+              "source_updated_at":"2018-04-01","quality_status":"usable" if "energy_kcal" in ns else "incomplete",
+              "source_metadata":{"data_type":"SR Legacy","release":"April 2018"},"nutrients":ns,"portions":portions.get(key,[])})
     return out
 
 def foundation(path):
@@ -89,12 +130,12 @@ def foundation(path):
         ns={}
         for n in f.get('foodNutrients',[]):
             d=n.get('nutrient') or {}; item=nutrient(d.get('name',''),d.get('unitName',''),n.get('amount'))
-            if item: ns[item[0]]=(item[1],item[2],item[3],d.get('name',''))
+            if item: ns[item[0]]=(item[1],item[2],item[3],d.get('name',''),item[4],item[5])
         portions=[]
         for p in f.get('foodPortions',[]):
             try: grams=float(p.get('gramWeight') or 0)
             except (TypeError,ValueError): continue
-            if grams>0: portions.append({"label":(p.get('portionDescription') or 'portion')[:100],"amount":float(p.get('amount') or 1),"unit":"portion","grams":grams,"is_default":False})
+            if grams>0: portions.append({"label":(p.get('portionDescription') or 'portion')[:100],"amount":float(p.get('amount') or 1),"unit":"portion","grams":grams,"is_default":not portions})
         out.append({"id":str(uuid.uuid5(uuid.NAMESPACE_URL,"usda_foundation:"+key)),"source_id":"usda_foundation","source_record_id":key,
           "data_kind":"generic","name":name[:240],"category":(f.get('foodCategory') or {}).get('description'),
           "country_code":"US","locale":"en-US","basis_amount":100,"basis_unit":"g",
@@ -106,7 +147,7 @@ def import_rows(rows,source,session):
     session.post(BASE+"/catalog_sources?on_conflict=id",json=source,headers={"Prefer":"resolution=merge-duplicates,return=minimal"},timeout=30).raise_for_status()
     defs={}
     for f in rows:
-        for code,(d,_,_,_) in f['nutrients'].items(): defs[code]=d
+        for code,(d,_,_,_,_,_) in f['nutrients'].items(): defs[code]=d
     for b in batches(list(defs.values())):
         session.post(BASE+"/catalog_nutrient_definitions?on_conflict=nutrient_code",json=b,headers={"Prefer":"resolution=merge-duplicates,return=minimal"},timeout=30).raise_for_status()
     for b in batches(rows,100):
@@ -115,23 +156,29 @@ def import_rows(rows,source,session):
         ids={x['source_record_id']:x['id'] for x in r.json()}; ns=[]; ps=[]
         for f in b:
             fid=ids.get(f['source_record_id'],f['id'])
-            for code,(d,val,unit,name) in f['nutrients'].items(): ns.append({"food_id":fid,"nutrient_code":code,"value":val,"source_unit":unit,"basis_amount":100,"basis_unit":"g","source_nutrient_name":name})
+            for code,(d,val,unit,name,source_value,source_unit) in f['nutrients'].items():
+                ns.append({"food_id":fid,"nutrient_code":code,"value":val,"value_unit":unit,
+                  "source_unit":source_unit,"source_original_value":source_value,"source_original_unit":source_unit,
+                  "normalization_status":"normalized" if unit==d["standard_unit"] else "source_unit_only",
+                  "basis_amount":100,"basis_unit":"g","source_nutrient_name":name})
             for p in f['portions']: ps.append({**p,"food_id":fid,"source_record_id":f['source_record_id']})
-        for part in batches(ns): session.post(BASE+"/catalog_food_nutrients?on_conflict=food_id,nutrient_code",json=part,headers={"Prefer":"resolution=merge-duplicates,return=minimal"},timeout=60).raise_for_status()
+        for part in batches(ns,500): session.post(BASE+"/catalog_food_nutrients?on_conflict=food_id,nutrient_code",json=part,headers={"Prefer":"resolution=merge-duplicates,return=minimal"},timeout=60).raise_for_status()
         ps=list({(p['food_id'],p['label'],p['amount'],p['unit']):p for p in ps}.values())
-        for part in batches(ps):
+        for part in batches(ps,500):
             r=session.post(BASE+"/catalog_food_portions?on_conflict=food_id,label,amount,unit",json=part,headers={"Prefer":"resolution=merge-duplicates,return=minimal"},timeout=60)
             if not r.ok: raise RuntimeError(f"Portion import failed: {r.text}")
     print(f"Imported {len(rows)} {source['name']} foods",flush=True)
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--fndds');p.add_argument('--foundation');a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--fndds');p.add_argument('--foundation');p.add_argument('--sr-legacy');a=p.parse_args()
     if not SECRET: raise SystemExit('Set SUPABASE_JWT_SECRET for local Supabase.')
     s=requests.Session();key=jwt();s.headers.update({'apikey':key,'Authorization':'Bearer '+key,'Content-Type':'application/json'})
     sources={'fndds':{"id":"usda_fndds","name":"USDA FNDDS 2021-2023","licence":"CC0 1.0","source_url":"https://fdc.nal.usda.gov/download-datasets/","attribution":"USDA FoodData Central"},
-      'foundation':{"id":"usda_foundation","name":"USDA Foundation Foods October 2026","licence":"CC0 1.0","source_url":"https://fdc.nal.usda.gov/download-datasets/","attribution":"USDA FoodData Central"}}
+      'foundation':{"id":"usda_foundation","name":"USDA Foundation Foods October 2026","licence":"CC0 1.0","source_url":"https://fdc.nal.usda.gov/download-datasets/","attribution":"USDA FoodData Central"},
+      'sr_legacy':{"id":"usda_sr_legacy","name":"USDA SR Legacy April 2018","licence":"CC0 1.0","source_url":"https://fdc.nal.usda.gov/download-datasets/","attribution":"USDA FoodData Central"}}
     for option,func,keyname in [(a.fndds,fndds,'fndds'),(a.foundation,foundation,'foundation')]:
         if option: import_rows(func(option),sources[keyname],s)
+    if a.sr_legacy: import_rows(sr_legacy(a.sr_legacy),sources['sr_legacy'],s)
 if __name__=='__main__':
     try: main()
     except Exception as e:

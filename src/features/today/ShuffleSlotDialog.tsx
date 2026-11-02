@@ -324,7 +324,7 @@ function candidateFromMeal(entry: SavedMeal, fields: NutrientField[]): ShuffleCa
   const result = calculateMealNutrition(entry.components.map((component) => ({
     foodId: component.food_id,
     food: component.food ? {
-      basisAmount: component.food.basis_amount, basisUnit: component.food.basis_unit, gramsPerServing: component.food.grams_per_serving,
+      basisAmount: component.food.basis_amount, basisUnit: component.food.basis_unit, gramsPerServing: component.food.grams_per_serving, servingUnit: component.food.default_portion_unit,
       caloriesKcal: component.food.calories_kcal,
       nutrients: Object.fromEntries(fields.map((field) => [field.field_id, component.nutrients[field.field_id] ?? null])),
     } : null,
@@ -348,7 +348,7 @@ async function plannedNutrition(userId: string, choice: NonNullable<ReturnType<t
     if (!entry || entry.components.some((component) => !component.food || component.food.archived_at)) return null;
     const result = calculateMealNutrition(entry.components.map((component) => ({
       foodId: component.food_id,
-      food: component.food ? { basisAmount: component.food.basis_amount, basisUnit: component.food.basis_unit, gramsPerServing: component.food.grams_per_serving, caloriesKcal: component.food.calories_kcal,
+      food: component.food ? { basisAmount: component.food.basis_amount, basisUnit: component.food.basis_unit, gramsPerServing: component.food.grams_per_serving, servingUnit: component.food.default_portion_unit, caloriesKcal: component.food.calories_kcal,
         nutrients: Object.fromEntries(fields.map((field) => [field.field_id, component.nutrients[field.field_id] ?? null])) } : null,
       amount: component.amount, unit: component.unit,
     })), fieldIds, choice.amount);
@@ -357,7 +357,7 @@ async function plannedNutrition(userId: string, choice: NonNullable<ReturnType<t
   if (choice.sourceKind === 'food') {
     const entry = choice.sourceId ? await loadFoodEntry(userId, choice.sourceId) : null;
     if (!entry) return null;
-    const result = calculateFoodPortion({ basisAmount: entry.food.basis_amount, basisUnit: entry.food.basis_unit, gramsPerServing: entry.food.grams_per_serving,
+    const result = calculateFoodPortion({ basisAmount: entry.food.basis_amount, basisUnit: entry.food.basis_unit, gramsPerServing: entry.food.grams_per_serving, servingUnit: entry.food.default_portion_unit,
       caloriesKcal: entry.food.calories_kcal, nutrients: Object.fromEntries(fields.map((field) => [field.field_id, entry.nutrients[field.field_id] ?? null])) }, choice.amount, choice.unit);
     return result.ok ? { calories: result.caloriesKcal, nutrients: result.nutrients } : null;
   }
@@ -366,7 +366,8 @@ async function plannedNutrition(userId: string, choice: NonNullable<ReturnType<t
   if (choice.sourceKind === 'one_off_food') {
     const raw = manual.nutrients && typeof manual.nutrients === 'object' ? manual.nutrients as Record<string, unknown> : {};
     const result = calculateFoodPortion({ basisAmount: typeof manual.basisAmount === 'number' ? manual.basisAmount : NaN,
-      basisUnit: typeof manual.basisUnit === 'string' ? manual.basisUnit : '', gramsPerServing: null,
+      basisUnit: typeof manual.basisUnit === 'string' ? manual.basisUnit : '', gramsPerServing: typeof manual.gramsPerServing === 'number' ? manual.gramsPerServing : null,
+      servingUnit: typeof manual.servingUnit === 'string' ? manual.servingUnit : null,
       caloriesKcal: typeof manual.caloriesKcal === 'number' ? manual.caloriesKcal : null,
       nutrients: Object.fromEntries(fields.map((field) => [field.field_id, typeof raw[field.field_id] === 'number' ? raw[field.field_id] as number : null])) }, choice.amount, choice.unit);
     return result.ok ? { calories: result.caloriesKcal, nutrients: result.nutrients } : null;

@@ -88,6 +88,26 @@ def cofid_value(value):
 def parse_cofid(path):
     book = load_workbook(path, read_only=True, data_only=True)
     foods = {}
+    # CoFID's Factors table is not a household-portion table. Preserve its
+    # food-specific edible proportion and specific gravity where available,
+    # so only source-supported conversions can be offered for that food.
+    factors = {}
+    factor_sheet = next((sheet for sheet in book.worksheets
+                         if sheet.title.lower().startswith("1.2 factors")), None)
+    if factor_sheet:
+        for row in factor_sheet.iter_rows(min_row=2, values_only=True):
+            if not row or not row[0]:
+                continue
+            food_code = str(row[0]).strip()
+            edible_proportion = numeric(row[7] if len(row) > 7 else None)
+            specific_gravity = numeric(row[8] if len(row) > 8 else None)
+            factor = {}
+            if edible_proportion is not None and 0 < edible_proportion <= 1:
+                factor["edible_proportion"] = edible_proportion
+            if specific_gravity is not None and specific_gravity > 0:
+                factor["specific_gravity_g_per_ml"] = specific_gravity
+            if factor:
+                factors[food_code] = factor
     for sheet in book.worksheets:
         if not re.match(r"1\.\d+", sheet.title) or sheet.title.endswith("Notes"):
             continue
@@ -115,6 +135,8 @@ def parse_cofid(path):
                     "trace_values": []},
                 "nutrients": {},
             })
+            if source_key in factors:
+                item["source_metadata"]["cofid_factors"] = factors[source_key]
             for idx in range(7, min(len(row), len(headers))):
                 value, is_trace = cofid_value(row[idx])
                 if value is None:

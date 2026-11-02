@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../app/AuthProvider';
 import { DataError } from '../../data/dataError';
 import { queryKeys } from '../../data/queryKeys';
-import { acceptWholeDayShuffle, completeDay, correctCompletedDayItem, ensureDaySnapshot, loadDayView, logDayItem, planDayItem, removePlannedDayItem, replaceDayItem, replacePlannedDayItem, resizePlannedDayItem, reviseDayItem, type AcceptWholeDayShuffleInput, type CompleteDayInput, type CorrectCompletedDayItemInput, type PlanDayItemInput, type ReplaceDayItemInput, type ReplacePlannedDayItemInput, type WholeDayShuffleChange } from '../../data/repositories/dayRepository';
+import { rememberAddedFoodPortions } from '../../data/repositories/foodPortionPreferenceRepository';
+import { acceptWholeDayShuffle, completeDay, correctCompletedDayItem, ensureDaySnapshot, loadDayView, logDayItem, logDayItems, planDayItem, planDayItems, removePlannedDayItem, replaceDayItem, replacePlannedDayItem, resizePlannedDayItem, reviseDayItem, type AcceptWholeDayShuffleInput, type CompleteDayInput, type CorrectCompletedDayItemInput, type LogDayItemInput, type PlanDayItemInput, type ReplaceDayItemInput, type ReplacePlannedDayItemInput, type WholeDayShuffleChange } from '../../data/repositories/dayRepository';
 import { loadCarryDecisions } from '../../data/repositories/carryRepository';
 import { ensureRoutineDay } from '../../data/repositories/mealRepository';
 import { useProfile } from '../../features/profile/useProfile';
@@ -12,6 +13,7 @@ import { AddChoiceDialog, type PreparedChoice } from '../../features/today/AddCh
 import { addLocalDays, effectiveTarget, formatLocalDate, localDateInTimezone } from '../../domain/dates';
 import { plannedItemName, readPlannedChoice, summarizeDay, readEatenSnapshot, type DayItem } from '../../domain/daySummary.ts';
 import { calculateCarryDifference } from '../../domain/carry';
+import { isValidQuantity, QUANTITY_MAX, QUANTITY_MIN, QUANTITY_STEP } from '../../domain/numericLimits';
 import { DateStepper } from '../components/DateStepper';
 import { Field, NumericField } from '../components/Field';
 import { LoadingSkeleton } from '../components/LoadingSkeleton';
@@ -42,14 +44,14 @@ export function TodayPage() {
   const today = localDateInTimezone(new Date(), timezone);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
-  const [preparedChoice, setPreparedChoice] = useState<PreparedChoice | null>(null);
+  const [preparedChoice, setPreparedChoice] = useState<PreparedChoice | PreparedChoice[] | null>(null);
   const [savedNotice, setSavedNotice] = useState('');
   const [editingItem, setEditingItem] = useState<{ id: string; amount: string; unit: string } | null>(null);
   const [replacingItem, setReplacingItem] = useState<{ id: string; localDate: string; revision: number; section: PreparedChoice['section'] } | null>(null);
   const [pendingReplacement, setPendingReplacement] = useState<ReplaceDayItemInput | null>(null);
   const [pendingCompletedCorrection, setPendingCompletedCorrection] = useState<CorrectCompletedDayItemInput | null>(null);
   const [undoTicket, setUndoTicket] = useState<{ id: string; localDate: string; revision: number } | null>(null);
-  const [pendingPlan, setPendingPlan] = useState<PlanDayItemInput | null>(null);
+  const [pendingPlan, setPendingPlan] = useState<PlanDayItemInput | PlanDayItemInput[] | null>(null);
   const [editingPlannedItem, setEditingPlannedItem] = useState<{ id: string; localDate: string; amount: string } | null>(null);
   const [pendingPortionOverride, setPendingPortionOverride] = useState<Parameters<typeof resizePlannedDayItem>[0] | null>(null);
   const [choosingInstead, setChoosingInstead] = useState<{ id: string; localDate: string; revision: number; section: PreparedChoice['section'] } | null>(null);
@@ -77,24 +79,39 @@ export function TodayPage() {
     enabled: Boolean(userId && dayQuery.data?.day?.status === 'completed'),
   });
   const logMutation = useMutation({
-    mutationFn: logDayItem,
-    onError: (_error, input) => { if (input.plannedItemId) setReviewingRoutineItem(null); },
+    mutationFn: (input: LogDayItemInput | LogDayItemInput[]) => Array.isArray(input) ? logDayItems(input) : logDayItem(input),
+    onError: (_error, input) => { if (!Array.isArray(input) && input.plannedItemId) setReviewingRoutineItem(null); },
     onSuccess: async (_result, input) => {
+      const firstInput = Array.isArray(input) ? input[0]! : input;
+      try {
+        await rememberAddedFoodPortions(userId!, (Array.isArray(input) ? input : [input]).map(({ sourceKind, sourceId, amount, unit, manualPayload }) => ({ sourceKind, sourceId, amount, unit, manualPayload })));
+        await queryClient.invalidateQueries({ queryKey: queryKeys.foodPortionPreferences(userId!) });
+      } catch {
+        // The meal log is already committed; a preference-write issue must not
+        // make it appear that the log failed.
+      }
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.day(userId!, input.localDate) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.day(userId!, firstInput.localDate) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.recentChoices(userId!) }),
       ]);
       setPreparedChoice(null);
-      if (input.plannedItemId) setReviewingRoutineItem(null);
-      setSavedNotice(input.plannedItemId ? 'Marked as eaten. Your other plans remain uneaten.' : 'Logged and saved to this day.');
+      if (!Array.isArray(input) && input.plannedItemId) setReviewingRoutineItem(null);
+      setSavedNotice(Array.isArray(input) ? `Logged ${input.length} items to this day.` : input.plannedItemId ? 'Marked as eaten. Your other plans remain uneaten.' : 'Logged and saved to this day.');
     },
   });
   const planMutation = useMutation({
-    mutationFn: planDayItem,
+    mutationFn: (input: PlanDayItemInput | PlanDayItemInput[]) => Array.isArray(input) ? planDayItems(input) : planDayItem(input),
     onSuccess: async (_result, input) => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.day(userId!, input.localDate) });
+      const firstInput = Array.isArray(input) ? input[0]! : input;
+      try {
+        await rememberAddedFoodPortions(userId!, (Array.isArray(input) ? input : [input]).map(({ sourceKind, sourceId, amount, unit, manualPayload }) => ({ sourceKind, sourceId, amount, unit, manualPayload })));
+        await queryClient.invalidateQueries({ queryKey: queryKeys.foodPortionPreferences(userId!) });
+      } catch {
+        // Planning succeeded independently of this optional convenience value.
+      }
+      await queryClient.invalidateQueries({ queryKey: queryKeys.day(userId!, firstInput.localDate) });
       setPendingPlan(null);
-      setSavedNotice('Added to your plan. It is not counted as eaten.');
+      setSavedNotice(Array.isArray(input) ? `Added ${input.length} items to your plan. They are not counted as eaten.` : 'Added to your plan. It is not counted as eaten.');
     },
   });
   const removePlannedMutation = useMutation({
@@ -403,11 +420,11 @@ export function TodayPage() {
                     else submitPlannedItem(item.id,item.revision,item.section,item.planned_payload);
                   }}>Ate it</button>}{activeDate > today && shuffleRoutineSlot && <button type="button" className="text-button" disabled={planReplacementMutation.isPending || dayQuery.data?.day?.status === 'completed'} onClick={() => { setSavedNotice(''); setShufflingItem(item); }}>Shuffle suggestion</button>}{activeDate > today && <button type="button" className="text-button" disabled={planReplacementMutation.isPending || portionOverrideMutation.isPending || removePlannedMutation.isPending || dayQuery.data?.day?.status === 'completed'} onClick={() => { setSavedNotice(''); setChoosingInstead({ id: item.id, localDate: activeDate, revision: item.revision, section: item.section }); }}>Choose instead</button>}<button type="button" className="text-button" disabled={removePlannedMutation.isPending || portionOverrideMutation.isPending || planReplacementMutation.isPending || dayQuery.data?.day?.status === 'completed'} onClick={() => { removePlannedMutation.reset(); removePlannedMutation.mutate({ requestId: crypto.randomUUID(), localDate: activeDate, itemId: item.id, expectedRevision: item.revision }); }}>Remove plan</button></div>}
                   {planned && editingPlannedItem?.id === item.id && editingPlannedItem.localDate === activeDate && <div className="today-edit-portion">
-                    <NumericField id={`planned-${item.id}-amount`} label={`Planned amount (${item.selected_unit ?? plan?.unit ?? 'serving'})`} min={0.0001} max={99_999_999} step="any" value={editingPlannedItem.amount} onChange={(event) => setEditingPlannedItem({ ...editingPlannedItem, amount: event.target.value })} />
+                    <NumericField id={`planned-${item.id}-amount`} label={`Planned amount (${item.selected_unit ?? plan?.unit ?? 'serving'})`} min={QUANTITY_MIN} max={QUANTITY_MAX} step={QUANTITY_STEP} value={editingPlannedItem.amount} onChange={(event) => setEditingPlannedItem({ ...editingPlannedItem, amount: event.target.value })} />
                     <p className="field-hint">This is a one-date override. It won’t change your weekly routine.</p>
-                    <div className="dialog-actions"><button type="button" className="text-button" disabled={portionOverrideMutation.isPending} onClick={() => setEditingPlannedItem(null)}>Cancel</button><button type="button" className="secondary-button" disabled={portionOverrideMutation.isPending || !Number.isFinite(Number(editingPlannedItem.amount)) || Number(editingPlannedItem.amount) <= 0} onClick={() => submitPlannedPortion(item.id,item.revision,editingPlannedItem.localDate,Number(editingPlannedItem.amount))}>{portionOverrideMutation.isPending ? 'Saving…' : 'Save portion'}</button></div>
+                    <div className="dialog-actions"><button type="button" className="text-button" disabled={portionOverrideMutation.isPending} onClick={() => setEditingPlannedItem(null)}>Cancel</button><button type="button" className="secondary-button" disabled={portionOverrideMutation.isPending || !isValidQuantity(editingPlannedItem.amount)} onClick={() => submitPlannedPortion(item.id,item.revision,editingPlannedItem.localDate,Number(editingPlannedItem.amount))}>{portionOverrideMutation.isPending ? 'Saving…' : 'Save portion'}</button></div>
                   </div>}
-                  {editingItem?.id === item.id && <div className="today-edit-portion"><NumericField id={`edit-${item.id}-amount`} label="Recorded amount" min={0.0001} max={99_999_999} step="any" value={editingItem.amount} onChange={(event) => setEditingItem({ ...editingItem, amount: event.target.value })} /><Field id={`edit-${item.id}-unit`} label="Unit"><input className="text-field" id={`edit-${item.id}-unit`} value={editingItem.unit} maxLength={24} onChange={(event) => setEditingItem({ ...editingItem, unit: event.target.value })} /></Field><div className="dialog-actions"><button type="button" className="text-button" onClick={() => setEditingItem(null)}>Cancel</button><button type="button" className="secondary-button" disabled={correctionMutation.isPending || !Number.isFinite(Number(editingItem.amount)) || Number(editingItem.amount) <= 0 || !editingItem.unit.trim()} onClick={() => submitCorrection({ requestId: crypto.randomUUID(), localDate: activeDate, itemId: item.id, expectedRevision: item.revision, action: 'resize', amount: Number(editingItem.amount), unit: editingItem.unit.trim() })}>{correctionMutation.isPending ? 'Saving…' : dayIsCompleted ? 'Review correction' : 'Save portion'}</button></div></div>}
+                  {editingItem?.id === item.id && <div className="today-edit-portion"><NumericField id={`edit-${item.id}-amount`} label="Recorded amount" min={QUANTITY_MIN} max={QUANTITY_MAX} step={QUANTITY_STEP} value={editingItem.amount} onChange={(event) => setEditingItem({ ...editingItem, amount: event.target.value })} /><Field id={`edit-${item.id}-unit`} label="Unit"><input className="text-field" id={`edit-${item.id}-unit`} value={editingItem.unit} maxLength={24} onChange={(event) => setEditingItem({ ...editingItem, unit: event.target.value })} /></Field><div className="dialog-actions"><button type="button" className="text-button" onClick={() => setEditingItem(null)}>Cancel</button><button type="button" className="secondary-button" disabled={correctionMutation.isPending || !isValidQuantity(editingItem.amount) || !editingItem.unit.trim()} onClick={() => submitCorrection({ requestId: crypto.randomUUID(), localDate: activeDate, itemId: item.id, expectedRevision: item.revision, action: 'resize', amount: Number(editingItem.amount), unit: editingItem.unit.trim() })}>{correctionMutation.isPending ? 'Saving…' : dayIsCompleted ? 'Review correction' : 'Save portion'}</button></div></div>}
                 </li>;
               })}</ul>}
             </section>;
@@ -429,7 +446,7 @@ export function TodayPage() {
         setIsAdding(false);
         setSavedNotice('');
         if (activeDate > today) { submitPlan(choice); return; }
-        submitChoice({ ...choice, requestId: crypto.randomUUID() });
+        submitChoice(choice);
       }} />}
       {userId && reviewingRoutineItem && <RoutineMealReviewDialog
         open
@@ -493,6 +510,7 @@ export function TodayPage() {
         }}
       />}
       {userId && replacingItem && <AddChoiceDialog key={replacingItem.id} open userId={userId} fields={displayedFields} futureDate={false} initialSection={replacingItem.section} dialogTitle="Replace logged item" submitLabel="Replace with this" onClose={() => setReplacingItem(null)} onPrepared={(choice) => {
+        if (Array.isArray(choice)) return;
         const requestId = crypto.randomUUID();
         const input: ReplaceDayItemInput = {
           requestId,
@@ -520,6 +538,7 @@ export function TodayPage() {
         } else replacementMutation.mutate(input);
       }} />}
       {userId && choosingInstead && <AddChoiceDialog key={choosingInstead.id} open userId={userId} fields={displayedFields} futureDate initialSection={choosingInstead.section} dialogTitle="Choose another plan" submitLabel="Update plan" onClose={() => setChoosingInstead(null)} onPrepared={(choice) => {
+        if (Array.isArray(choice)) return;
         const input: ReplacePlannedDayItemInput = {
           requestId: crypto.randomUUID(), localDate: choosingInstead.localDate, itemId: choosingInstead.id,
           expectedRevision: choosingInstead.revision, section: choice.section, sourceKind: choice.kind,
@@ -536,36 +555,33 @@ export function TodayPage() {
     </div>
   );
 
-  function submitChoice(choice: PreparedChoice) {
-    if (!userId || activeDate > today) return;
-    const requestId = choice.requestId ?? crypto.randomUUID();
-    setPreparedChoice({ ...choice, requestId });
-    logMutation.mutate({
-      requestId,
-      localDate: activeDate,
-      section: choice.section,
-      sourceKind: choice.kind,
-      sourceId: choice.kind === 'food' || choice.kind === 'meal' ? choice.id : null,
-      amount: choice.amount,
-      unit: choice.unit,
+  function logInput(choice: PreparedChoice): LogDayItemInput {
+    return {
+      requestId: choice.requestId ?? crypto.randomUUID(), localDate: activeDate, section: choice.section,
+      sourceKind: choice.kind, sourceId: choice.kind === 'food' || choice.kind === 'meal' ? choice.id : null,
+      amount: choice.amount, unit: choice.unit,
       manualPayload: choice.snapshot ? { ...choice.snapshot, name: choice.name } : undefined,
-      plannedItemId: choice.plannedItemId,
-      expectedItemRevision: choice.expectedItemRevision,
-    });
+      plannedItemId: choice.plannedItemId, expectedItemRevision: choice.expectedItemRevision,
+    };
+  }
+  function submitChoice(choice: PreparedChoice | PreparedChoice[]) {
+    if (!userId || activeDate > today) return;
+    const choices = Array.isArray(choice) ? choice : [choice];
+    const prepared = choices.map((entry) => ({ ...entry, requestId: entry.requestId ?? crypto.randomUUID() }));
+    setPreparedChoice(Array.isArray(choice) ? prepared : prepared[0]!);
+    logMutation.mutate(prepared.length > 1 ? prepared.map(logInput) : logInput(prepared[0]!));
   }
 
-  function submitPlan(choice: PreparedChoice) {
+  function submitPlan(choice: PreparedChoice | PreparedChoice[]) {
     if (!userId || activeDate <= today) return;
-    const input: PlanDayItemInput = {
-      requestId: choice.requestId ?? crypto.randomUUID(),
-      localDate: activeDate,
-      section: choice.section,
-      sourceKind: choice.kind,
-      sourceId: choice.kind === 'food' || choice.kind === 'meal' ? choice.id : null,
-      amount: choice.amount,
-      unit: choice.unit,
-      manualPayload: choice.snapshot ? { ...choice.snapshot, name: choice.name } : undefined,
-    };
+    const choices = Array.isArray(choice) ? choice : [choice];
+    const inputs = choices.map((entry) => ({
+      requestId: entry.requestId ?? crypto.randomUUID(), localDate: activeDate, section: entry.section,
+      sourceKind: entry.kind, sourceId: entry.kind === 'food' || entry.kind === 'meal' ? entry.id : null,
+      amount: entry.amount, unit: entry.unit,
+      manualPayload: entry.snapshot ? { ...entry.snapshot, name: entry.name } : undefined,
+    } satisfies PlanDayItemInput));
+    const input = inputs.length > 1 ? inputs : inputs[0]!;
     setPendingPlan(input);
     setSavedNotice('');
     planMutation.reset();

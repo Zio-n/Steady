@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { ArrowDown, ArrowLeft, ArrowUp, Plus, Search, Trash2 } from 'lucide-react';
-import { useMutation } from '@tanstack/react-query';
+import { ArrowDown, ArrowLeft, ArrowUp, BookMarked, Plus, Search, Trash2 } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { NutrientField } from '../../data/repositories/profileRepository';
-import type { FoodWithNutrients } from '../../data/repositories/foodRepository';
+import { loadFoodEntry, type FoodWithNutrients } from '../../data/repositories/foodRepository';
+import { saveCatalogFoodCopy, searchCatalogFoods, type CatalogFoodSearchResult } from '../../data/repositories/catalogFoodRepository';
+import { queryKeys } from '../../data/queryKeys';
 import { saveMeal, type SavedMeal } from '../../data/repositories/mealRepository';
 import { calculateMealNutrition } from '../../domain/mealNutrition.ts';
 import { calculateFoodPortion } from '../../domain/foodNutrition.ts';
+import { isValidQuantity, QUANTITY_MAX, QUANTITY_MIN, QUANTITY_STEP } from '../../domain/numericLimits';
 import { choiceMatchScore } from '../../domain/choiceSearch.ts';
 import { OneOffFoodForm } from '../today/OneOffFoodForm';
 import { Button } from '../../ui/components/Button';
@@ -13,6 +16,7 @@ import { Dialog } from '../../ui/components/Dialog';
 import { Field, NumericField } from '../../ui/components/Field';
 import { UnitPicker } from '../../ui/components/UnitPicker';
 import { StatusMessage } from '../../ui/components/StatusMessage';
+import { CatalogFoodCorrectionForm, type CatalogueFoodCorrection } from './CatalogFoodCorrectionForm';
 
 type DraftComponent = { key: string; foodId: string; amount: string; unit: string };
 const format = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 1 });
@@ -27,25 +31,74 @@ export function MealEditor({ meal, foods, fields, userId, requestKey, onSaved, o
   onCancel: () => void;
   onDirtyChange: (dirty: boolean) => void;
 }) {
+  const queryClient = useQueryClient();
   const [name, setName] = useState(meal?.meal.name ?? '');
   const [components, setComponents] = useState<DraftComponent[]>(() => meal?.components.map((row) => ({ key: row.component_id, foodId: row.food_id, amount: String(row.amount), unit: row.unit })) ?? []);
   const [declaredWeight, setDeclaredWeight] = useState(meal?.meal.declared_total_weight_g == null ? '' : String(meal.meal.declared_total_weight_g));
   const [search, setSearch] = useState('');
+  const [catalogueQuery, setCatalogueQuery] = useState('');
+  const [selectedCatalogueFood, setSelectedCatalogueFood] = useState<CatalogFoodSearchResult | null>(null);
+  const catalogueLocale = typeof navigator === 'undefined' ? null : navigator.language || null;
   const [addingFood, setAddingFood] = useState(false);
   const [newFoodDirty, setNewFoodDirty] = useState(false);
   const [discardFoodOpen, setDiscardFoodOpen] = useState(false);
   const [error, setError] = useState('');
   const [isDirty, setIsDirty] = useState(false);
   const requestRef = useRef<{ signature: string; id: string } | null>(null);
+  const catalogueCopyRequests = useRef(new Map<string, { signature: string; requestId: string }>());
   const mutation = useMutation({ mutationFn: saveMeal, onSuccess: onSaved, onError: () => setError('We couldn’t confirm this save. Check your Library before retrying.') });
-  useEffect(() => { onDirtyChange(isDirty || newFoodDirty || mutation.isPending); }, [isDirty, newFoodDirty, mutation.isPending, onDirtyChange]);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setCatalogueQuery(search.trim()), 250);
+    return () => window.clearTimeout(timeout);
+  }, [search]);
+  const catalogue = useQuery({
+    queryKey: queryKeys.catalogFoodSearch(catalogueQuery, catalogueLocale),
+    queryFn: () => searchCatalogFoods(catalogueQuery, catalogueLocale, 20),
+    enabled: catalogueQuery.length >= 2 && !addingFood,
+    staleTime: 60_000,
+  });
+  const addCatalogueFood = useMutation({
+    mutationFn: async ({ food, correction }: { food: CatalogFoodSearchResult; correction: CatalogueFoodCorrection }) => {
+      const input = {
+        catalogFoodId: food.food_id,
+        name: correction.name,
+        brand: food.brand,
+        basisAmount: correction.basisAmount,
+        basisUnit: food.basis_unit,
+        defaultPortionAmount: correction.basisAmount,
+        defaultPortionUnit: food.basis_unit,
+        caloriesKcal: correction.caloriesKcal,
+        nutrients: correction.nutrients,
+        isPersonallyAdjusted: correction.isPersonallyAdjusted,
+      };
+      const signature = JSON.stringify(input);
+      const previous = catalogueCopyRequests.current.get(food.food_id);
+      const requestId = previous?.signature === signature ? previous.requestId : crypto.randomUUID();
+      catalogueCopyRequests.current.set(food.food_id, { signature, requestId });
+      const result = await saveCatalogFoodCopy({ ...input, requestId });
+      const id = result && typeof result === 'object' && !Array.isArray(result) && 'id' in result ? result.id : null;
+      if (typeof id !== 'string') throw new Error('Missing private food ID');
+      const entry = await loadFoodEntry(userId, id);
+      if (!entry) throw new Error('Saved private food was not returned');
+      return entry;
+    },
+    onSuccess: async (entry) => {
+      if (selectedCatalogueFood) catalogueCopyRequests.current.delete(selectedCatalogueFood.food_id);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.foods(userId) });
+      addFood(entry);
+      setSelectedCatalogueFood(null);
+      setSearch('');
+    },
+    onError: () => setError('We couldn’t add that catalogue food. Your meal is unchanged; try again.'),
+  });
+  useEffect(() => { onDirtyChange(isDirty || newFoodDirty || mutation.isPending || Boolean(selectedCatalogueFood)); }, [isDirty, newFoodDirty, mutation.isPending, selectedCatalogueFood, onDirtyChange]);
   const foodById = useMemo(() => new Map(foods.map((entry) => [entry.food.id, entry])), [foods]);
   const matchingFoods = useMemo(() => search.trim()
     ? foods.map((entry) => ({ entry, score: choiceMatchScore(entry.food.name, entry.food.brand, search) })).filter((item) => item.score >= 0).sort((a, b) => b.score - a.score || a.entry.food.name.localeCompare(b.entry.food.name)).slice(0, 30).map((item) => item.entry)
     : foods.slice().sort((a, b) => b.food.created_at.localeCompare(a.food.created_at)).slice(0, 12), [foods, search]);
   const nutrition = calculateMealNutrition(components.map((component) => {
     const entry = foodById.get(component.foodId);
-    return { foodId: component.foodId, food: entry ? { basisAmount: entry.food.basis_amount, basisUnit: entry.food.basis_unit, gramsPerServing: entry.food.grams_per_serving, caloriesKcal: entry.food.calories_kcal, nutrients: Object.fromEntries(fields.map((field) => [field.field_id, entry.nutrients[field.field_id] ?? null])) } : null, amount: Number(component.amount), unit: component.unit };
+    return { foodId: component.foodId, food: entry ? { basisAmount: entry.food.basis_amount, basisUnit: entry.food.basis_unit, gramsPerServing: entry.food.grams_per_serving, servingUnit: entry.food.default_portion_unit, caloriesKcal: entry.food.calories_kcal, nutrients: Object.fromEntries(fields.map((field) => [field.field_id, entry.nutrients[field.field_id] ?? null])) } : null, amount: Number(component.amount), unit: component.unit };
   }), fields.map((field) => field.field_id));
   const calories = nutrition.ok ? nutrition.nutrition.calories : null;
 
@@ -76,7 +129,7 @@ export function MealEditor({ meal, foods, fields, userId, requestKey, onSaved, o
     const parsed = components.map((component) => ({ food_id: component.foodId, amount: Number(component.amount), unit: component.unit.trim() }));
     if (!cleanName || cleanName.length > 160) { setError('Give this meal a name to save it.'); return; }
     if (parsed.length < 1 || parsed.length > 100) { setError('Add at least one food to the meal.'); return; }
-    if (parsed.some((component) => !component.food_id || !Number.isFinite(component.amount) || component.amount <= 0 || component.amount >= 100_000_000 || !component.unit || component.unit.length > 24) || (weight !== undefined && (!Number.isFinite(weight) || weight <= 0 || weight >= 100_000_000))) { setError('Check the amounts, units, and optional finished weight.'); return; }
+    if (parsed.some((component) => !component.food_id || !isValidQuantity(component.amount) || !component.unit || component.unit.length > 24) || (weight !== undefined && !isValidQuantity(weight))) { setError('Check the amounts, units, and finished weight.'); return; }
     if (!nutrition.ok) {
       const item = nutrition.componentIndex == null ? 'A food' : `Food ${nutrition.componentIndex + 1}`;
       setError(nutrition.error === 'food_unavailable' ? `${item} is unavailable. Remove and add it again.` : nutrition.error === 'unknown_serving_weight' || nutrition.error === 'incompatible_unit' ? `${item} needs a unit that matches its nutrition quantity.` : `${item} needs a valid amount and unit.`);
@@ -93,15 +146,17 @@ export function MealEditor({ meal, foods, fields, userId, requestKey, onSaved, o
     {error && <div className="meal-builder-alert"><StatusMessage tone="error">{error}</StatusMessage></div>}
     <div className="meal-builder-grid">
       <section className="meal-builder-source" aria-labelledby="builder-foods-title">
-        <div className="meal-builder-panel-head"><div><h2 id="builder-foods-title">Find foods</h2><p>Choose ingredients from your Library.</p></div></div>
+        <div className="meal-builder-panel-head"><div><h2 id="builder-foods-title">Find foods</h2><p>Choose from your Library or the shared food catalogue.</p></div></div>
         {addingFood ? <div className="meal-builder-new-food"><button type="button" className="meal-builder-back" onClick={() => { if (newFoodDirty) setDiscardFoodOpen(true); else setAddingFood(false); }}><ArrowLeft size={18} /> Back to foods</button><h3>Add a food</h3><OneOffFoodForm key="builder-new-food" userId={userId} fields={fields} futureDate section="unlabelled" purpose="builder" onDirtyChange={setNewFoodDirty} onSavedOnly={() => { setAddingFood(false); setNewFoodDirty(false); }} onPrepared={(choice) => { setComponents((current) => [...current, { key: crypto.randomUUID(), foodId: choice.id, amount: String(choice.amount), unit: choice.unit }]); setIsDirty(true); setAddingFood(false); setNewFoodDirty(false); setSearch(''); }} /></div> : <>
           <label className="library-search meal-builder-search"><Search size={19} aria-hidden="true" /><span className="visually-hidden">Search foods</span><input type="search" value={search} placeholder="Search foods and brands" onChange={(event) => setSearch(event.target.value)} /></label>
-          <div className="meal-builder-results-head"><span>{search.trim() ? 'Matches' : 'Recently added'}</span><span>{matchingFoods.length ? `${matchingFoods.length} shown` : ''}</span></div>
-          {matchingFoods.length ? <ul className="meal-builder-food-results">{matchingFoods.map((entry) => {
+          <div className="meal-builder-results-head"><span>{search.trim() ? 'Search results' : 'Recently added'}</span><span>{search.trim() && catalogue.isFetching ? 'Searching…' : ''}</span></div>
+          {(matchingFoods.length > 0 || (search.trim() && (catalogue.data?.length ?? 0) > 0)) ? <ul className="meal-builder-food-results">{matchingFoods.map((entry) => {
             const protein = fields.find((field) => field.standard_key === 'protein');
             const proteinValue = protein && entry.nutrients[protein.field_id];
-            return <li key={entry.food.id}><button type="button" onClick={() => addFood(entry)} aria-label={`Add ${entry.food.name} to meal`}><span className="meal-builder-result-name"><strong>{entry.food.name}</strong>{entry.food.brand && <small>{entry.food.brand}</small>}</span><span className="meal-builder-result-facts"><span>{entry.food.calories_kcal == null ? 'Calories unknown' : `${format(entry.food.calories_kcal)} kcal`}{proteinValue != null ? ` · ${format(proteinValue)} g protein` : ''}</span><small>per {format(entry.food.basis_amount)} {entry.food.basis_unit}</small></span><Plus size={18} aria-hidden="true" /></button></li>;
-          })}</ul> : <div className="meal-builder-no-results"><strong>{search.trim() ? 'No matching foods' : 'Your Library is empty'}</strong><p>{search.trim() ? 'Try a shorter name or add this food.' : 'Add the first food to start building your meal.'}</p></div>}
+            return <li key={'library-' + entry.food.id}><button type="button" onClick={() => addFood(entry)} aria-label={`Add ${entry.food.name} to meal`}><span className="meal-builder-result-name"><strong>{entry.food.name}</strong><small className="meal-builder-library-marker"><BookMarked size={13} aria-hidden="true" /> In Library</small>{entry.food.brand && <small>{entry.food.brand}</small>}</span><span className="meal-builder-result-facts"><span>{entry.food.calories_kcal == null ? 'Calories unknown' : `${format(entry.food.calories_kcal)} kcal`}{proteinValue != null ? ` · ${format(proteinValue)} g protein` : ''}</span><small>per {format(entry.food.basis_amount)} {entry.food.basis_unit}</small></span><Plus size={18} aria-hidden="true" /></button></li>;
+          })}{search.trim() && catalogue.data?.map((food) => <li key={'catalogue-' + food.food_id}><button type="button" aria-label={`Review ${food.name}`} disabled={addCatalogueFood.isPending} onClick={() => { setSelectedCatalogueFood(food); addCatalogueFood.reset(); }}><span className="meal-builder-result-name"><strong>{food.name}</strong>{food.brand && <small>{food.brand}</small>}{food.quality_status === 'incomplete' && <small>Some nutrition missing</small>}</span><span className="meal-builder-result-facts"><span>{food.calories_kcal == null ? 'Calories unknown' : `${format(food.calories_kcal)} kcal`}{food.protein_g != null ? ` · ${format(food.protein_g)} g protein` : ''}</span><small>per {format(food.basis_amount)} {food.basis_unit}</small></span><Plus size={18} aria-hidden="true" /></button></li>)}</ul> : <div className="meal-builder-no-results"><strong>{search.trim() ? catalogue.isFetching ? 'Searching…' : 'No matching foods' : 'Your Library is empty'}</strong><p>{search.trim() ? 'Try a shorter name or add this food.' : 'Add the first food to start building your meal.'}</p></div>}
+          {search.trim() && catalogue.isError && <p className="meal-builder-catalogue-note">Catalogue search is temporarily unavailable.</p>}
+          {selectedCatalogueFood && <CatalogFoodCorrectionForm key={selectedCatalogueFood.food_id} food={selectedCatalogueFood} fields={fields} saving={addCatalogueFood.isPending} onCancel={() => { setSelectedCatalogueFood(null); addCatalogueFood.reset(); }} onSave={(correction) => addCatalogueFood.mutate({ food: selectedCatalogueFood, correction })} />}
           <button type="button" className="meal-builder-add-food" onClick={() => setAddingFood(true)}><Plus size={18} /> Add a food</button>
         </>}
       </section>
@@ -110,11 +165,11 @@ export function MealEditor({ meal, foods, fields, userId, requestKey, onSaved, o
         <Field id={`${requestKey}-name`} label="Meal name"><input id={`${requestKey}-name`} className="text-field" maxLength={160} value={name} placeholder="e.g. Yoghurt with berries" onChange={(event) => { setName(event.target.value); setIsDirty(true); setError(''); }} /></Field>
         {components.length ? <ol className="meal-builder-components">{components.map((component, index) => {
           const entry = foodById.get(component.foodId);
-          const portion = entry ? calculateFoodPortion({ basisAmount: entry.food.basis_amount, basisUnit: entry.food.basis_unit, gramsPerServing: entry.food.grams_per_serving, caloriesKcal: entry.food.calories_kcal, nutrients: {} }, Number(component.amount), component.unit) : null;
-          return <li className="meal-builder-component" key={component.key}><div className="meal-builder-component-top"><span className="meal-builder-component-index">{index + 1}</span><div><strong>{entry?.food.name ?? meal?.components.find((row) => row.food_id === component.foodId)?.food?.name ?? 'Unavailable food'}</strong><small>{portion?.ok ? portion.caloriesKcal == null ? 'Calories unknown' : `${format(portion.caloriesKcal)} kcal` : 'Check amount or unit'}</small></div><button type="button" className="meal-builder-remove" aria-label={`Remove ${entry?.food.name ?? `food ${index + 1}`}`} onClick={() => { setComponents((current) => current.filter((row) => row.key !== component.key)); setIsDirty(true); }}><Trash2 size={17} /></button></div><div className="meal-builder-component-controls"><NumericField id={`${requestKey}-${component.key}-amount`} label="Amount" min={0.0001} max={99_999_999} step="any" value={component.amount} onChange={(event) => changeComponent(component.key, { amount: event.target.value })} /><UnitPicker id={`${requestKey}-${component.key}-unit`} value={component.unit} onChange={(unit) => changeComponent(component.key, { unit })} /><div className="meal-builder-order"><button type="button" aria-label={`Move ${entry?.food.name ?? 'food'} up`} disabled={index === 0} onClick={() => moveComponent(index, -1)}><ArrowUp size={17} /></button><button type="button" aria-label={`Move ${entry?.food.name ?? 'food'} down`} disabled={index === components.length - 1} onClick={() => moveComponent(index, 1)}><ArrowDown size={17} /></button></div></div></li>;
+          const portion = entry ? calculateFoodPortion({ basisAmount: entry.food.basis_amount, basisUnit: entry.food.basis_unit, gramsPerServing: entry.food.grams_per_serving, servingUnit: entry.food.default_portion_unit, caloriesKcal: entry.food.calories_kcal, nutrients: {} }, Number(component.amount), component.unit) : null;
+          return <li className="meal-builder-component" key={component.key}><div className="meal-builder-component-top"><span className="meal-builder-component-index">{index + 1}</span><div><strong>{entry?.food.name ?? meal?.components.find((row) => row.food_id === component.foodId)?.food?.name ?? 'Unavailable food'}</strong><small>{portion?.ok ? portion.caloriesKcal == null ? 'Calories unknown' : `${format(portion.caloriesKcal)} kcal` : 'Check amount or unit'}</small></div><button type="button" className="meal-builder-remove" aria-label={`Remove ${entry?.food.name ?? `food ${index + 1}`}`} onClick={() => { setComponents((current) => current.filter((row) => row.key !== component.key)); setIsDirty(true); }}><Trash2 size={17} /></button></div><div className="meal-builder-component-controls"><NumericField id={`${requestKey}-${component.key}-amount`} label="Amount" min={QUANTITY_MIN} max={QUANTITY_MAX} step={QUANTITY_STEP} value={component.amount} onChange={(event) => changeComponent(component.key, { amount: event.target.value })} /><UnitPicker id={`${requestKey}-${component.key}-unit`} value={component.unit} onChange={(unit) => changeComponent(component.key, { unit })} /><div className="meal-builder-order"><button type="button" aria-label={`Move ${entry?.food.name ?? 'food'} up`} disabled={index === 0} onClick={() => moveComponent(index, -1)}><ArrowUp size={17} /></button><button type="button" aria-label={`Move ${entry?.food.name ?? 'food'} down`} disabled={index === components.length - 1} onClick={() => moveComponent(index, 1)}><ArrowDown size={17} /></button></div></div></li>;
         })}</ol> : <div className="meal-builder-draft-empty"><Plus size={25} aria-hidden="true" /><strong>Start with a food</strong><p>Choose one from the Library or add your own. You can build and tweak the meal here.</p></div>}
         <section className="meal-builder-nutrition" aria-live="polite" aria-labelledby="builder-nutrition-title"><div className="meal-builder-nutrition-head"><div><span className="eyebrow">LIVE BREAKDOWN</span><h3 id="builder-nutrition-title">Nutrition for this meal</h3></div><strong>{calories?.value == null ? '—' : format(calories.value)} <small>kcal</small></strong></div>{nutrition.ok ? <><dl className="meal-builder-metrics">{fields.filter((field) => field.standard_key === 'protein' || field.standard_key === 'carbohydrate' || field.standard_key === 'fat' || field.standard_key === 'fibre').map((field) => { const metric = nutrition.nutrition.nutrients[field.field_id]; return <div key={field.field_id}><dt>{field.name}</dt><dd>{metric?.value == null ? '—' : `${format(metric.value)} ${field.unit}`}{metric && !metric.complete && metric.value != null ? <small>partial</small> : null}</dd></div>; })}</dl><details className="meal-builder-more-nutrients"><summary>All nutrients</summary><dl>{fields.filter((field) => !['protein', 'carbohydrate', 'fat', 'fibre'].includes(field.standard_key ?? '')).map((field) => { const metric = nutrition.nutrition.nutrients[field.field_id]; return <div key={field.field_id}><dt>{field.name}</dt><dd>{metric?.value == null ? 'Unknown' : `${format(metric.value)} ${field.unit}${metric.complete ? '' : ' · partial'}`}</dd></div>; })}</dl></details>{!calories?.complete && <p className="meal-builder-partial">Some foods have unknown calories. Totals show only the values available.</p>}</> : <p className="meal-builder-partial">{components.length ? 'Check food amounts and units to see the total.' : 'Add a food to see the nutrition.'}</p>}</section>
-        <details className="meal-builder-details"><summary>More details</summary><NumericField id={`${requestKey}-weight`} label="Finished weight in grams" hint="Optional. Use this if you know the weight of the whole prepared meal." min={0.0001} max={99_999_999} step="any" value={declaredWeight} onChange={(event) => { setDeclaredWeight(event.target.value); setIsDirty(true); }} /></details>
+        <details className="meal-builder-details"><summary>More details</summary><NumericField id={`${requestKey}-weight`} label="Finished weight in grams" hint="Enter the prepared meal's weight if known." min={QUANTITY_MIN} max={QUANTITY_MAX} step={QUANTITY_STEP} value={declaredWeight} onChange={(event) => { setDeclaredWeight(event.target.value); setIsDirty(true); }} /></details>
         {!addingFood && <div className="meal-builder-save-bar"><span>{calories?.value == null ? 'Nutrition updates as you build' : `${format(calories.value)} kcal for this meal`}</span><Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? 'Saving…' : meal ? 'Save changes' : 'Save to Library'}</Button></div>}
       </form>
     </div>

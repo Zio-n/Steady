@@ -6,6 +6,7 @@ import { loadFoodLibrary } from '../../data/repositories/foodRepository';
 import { saveMeal } from '../../data/repositories/mealRepository';
 import { queryKeys } from '../../data/queryKeys';
 import { calculateMealNutrition } from '../../domain/mealNutrition.ts';
+import { isValidQuantity, QUANTITY_MAX, QUANTITY_MIN, QUANTITY_STEP } from '../../domain/numericLimits';
 import { nextIdempotentRequest } from '../../domain/requestIdentity';
 import { Button } from '../../ui/components/Button';
 import { Field, NumericField } from '../../ui/components/Field';
@@ -66,6 +67,7 @@ export function OneOffMealForm({ userId, fields, futureDate, section: daySection
         basisAmount: entry.food.basis_amount,
         basisUnit: entry.food.basis_unit,
         gramsPerServing: entry.food.grams_per_serving,
+        servingUnit: entry.food.default_portion_unit,
         caloriesKcal: entry.food.calories_kcal,
         nutrients: Object.fromEntries(fields.map((field) => [field.field_id, entry.nutrients[field.field_id] ?? null])),
       } : null,
@@ -80,6 +82,7 @@ export function OneOffMealForm({ userId, fields, futureDate, section: daySection
   }
   function canSave() {
     return name.trim().length > 0 && name.trim().length <= 160 && preview.ok
+      && isValidQuantity(portion) && components.every((component) => isValidQuantity(component.amount))
       && components.every((component) => rows.some((entry) => entry.food.id === component.foodId));
   }
   const canAdd = canSave() && (futureDate || preview.ok && preview.nutrition.canLog);
@@ -117,11 +120,11 @@ export function OneOffMealForm({ userId, fields, futureDate, section: daySection
     <ol className="meal-component-list">{components.map((component, index) => <li className="meal-component-row" key={component.key}>
       <div className="meal-component-number">{index + 1}</div><div className="meal-component-fields">
         <Field id={`oneoff-meal-${component.key}-food`} label="Food"><select className="text-field" id={`oneoff-meal-${component.key}-food`} value={component.foodId} onChange={(event) => { const food = rows.find((entry) => entry.food.id === event.target.value)?.food; updateRow(index, { foodId: event.target.value, ...(food ? { amount: String(food.default_portion_amount), unit: food.default_portion_unit } : {}) }); }}><option value="">Choose a saved food</option>{rows.map((entry) => <option key={entry.food.id} value={entry.food.id}>{entry.food.name}{entry.food.brand ? ` · ${entry.food.brand}` : ''}</option>)}</select></Field>
-        <NumericField id={`oneoff-meal-${component.key}-amount`} label="Amount" min={0.0001} max={99_999_999} step="any" value={component.amount} onChange={(event) => updateRow(index, { amount: event.target.value })} />
+        <NumericField id={`oneoff-meal-${component.key}-amount`} label="Amount" min={QUANTITY_MIN} max={QUANTITY_MAX} step={QUANTITY_STEP} value={component.amount} onChange={(event) => updateRow(index, { amount: event.target.value })} />
         <UnitPicker id={`oneoff-meal-${component.key}-unit`} value={component.unit} onChange={(next) => updateRow(index, { unit: next })} />
       </div><div className="meal-component-actions"><button className="icon-button" type="button" aria-label={`Move component ${index + 1} up`} disabled={index === 0} onClick={() => setComponents((current) => { const next = [...current]; [next[index - 1], next[index]] = [next[index]!, next[index - 1]!]; return next; })}><ArrowUp size={17} /></button><button className="icon-button" type="button" aria-label={`Move component ${index + 1} down`} disabled={index === components.length - 1} onClick={() => setComponents((current) => { const next = [...current]; [next[index + 1], next[index]] = [next[index]!, next[index + 1]!]; return next; })}><ArrowDown size={17} /></button><button className="icon-button" type="button" aria-label={`Remove component ${index + 1}`} disabled={components.length === 1} onClick={() => setComponents((current) => current.filter((_, row) => row !== index))}><X size={17} /></button></div>
     </li>)}</ol>
-    <NumericField id="oneoff-meal-portion" label="Meal servings" min={0.0001} max={99_999_999} step="any" value={portion} onChange={(event) => setPortion(event.target.value)} />
+    <NumericField id="oneoff-meal-portion" label="Meal servings" min={QUANTITY_MIN} max={QUANTITY_MAX} step={QUANTITY_STEP} value={portion} onChange={(event) => setPortion(event.target.value)} />
     {preview.ok && <dl className="food-portion-values"><div><dt>Calories</dt><dd>{preview.nutrition.calories.value === null ? 'Unknown' : `${preview.nutrition.calories.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} kcal${preview.nutrition.calories.complete ? '' : ' · partial'}`}</dd></div>{fields.filter((field) => field.is_displayed).map((field) => { const metric = preview.nutrition.nutrients[field.field_id]!; return <div key={field.field_id}><dt>{field.name}</dt><dd>{metric.value === null ? `Unknown ${field.unit}` : `${metric.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${field.unit}${metric.complete ? '' : ' · partial'}`}</dd></div>; })}</dl>}
     {!preview.ok && <p className="field-hint">{preview.error === 'incompatible_unit' ? `Component ${Number(preview.componentIndex) + 1} has incompatible units.` : preview.error === 'unknown_serving_weight' ? `Component ${Number(preview.componentIndex) + 1} needs a known serving weight.` : 'Choose a food and valid positive amount for each component.'}</p>}
     {extraFields}

@@ -102,6 +102,37 @@ export async function logCalendarItem(input: CalendarChoice) {
   return data;
 }
 
+/** Logs several foods together while retaining an independent snapshot for each food. */
+export async function logCalendarItems(inputs: CalendarChoice[]) {
+  if (!supabase) throw new DataError('Connect Supabase before logging a meal.', 'configuration');
+  if (inputs.length < 2) throw new DataError('A batch needs at least two entries.', 'validation');
+  const { data, error } = await supabase.rpc('calendar_log_day_items', {
+    p_items: inputs.map((input) => ({
+      request_id: input.requestId, local_date: input.localDate, section: input.section,
+      source_kind: input.sourceKind, source_id: input.sourceId, amount: input.amount, unit: input.unit,
+      manual_payload: input.manualPayload ?? null, planned_item_id: input.plannedItemId ?? null,
+      expected_item_revision: input.expectedItemRevision ?? null,
+    })) as unknown as Json,
+  });
+  if (error) throw toDataError(error);
+  return data;
+}
+
+/** Plans several foods together in one transaction. */
+export async function planCalendarItems(inputs: CalendarChoice[]) {
+  if (!supabase) throw new DataError('Connect Supabase before planning a meal.', 'configuration');
+  if (inputs.length < 2) throw new DataError('A batch needs at least two entries.', 'validation');
+  const { data, error } = await supabase.rpc('calendar_plan_day_items', {
+    p_items: inputs.map((input) => ({
+      request_id: input.requestId, local_date: input.localDate, section: input.section,
+      source_kind: input.sourceKind, source_id: input.sourceId, amount: input.amount, unit: input.unit,
+      manual_payload: input.manualPayload ?? null,
+    })) as unknown as Json,
+  });
+  if (error) throw toDataError(error);
+  return data;
+}
+
 export async function transferCalendarPlan(input: {
   requestId: string; fromDate: string; toDate: string; itemId: string; expectedRevision: number; action: 'copy' | 'move';
 }) {

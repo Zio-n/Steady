@@ -82,7 +82,7 @@ export function ProfileTargetEditor({ profile, onDirtyChange }: { profile: Profi
       return;
     }
     if (Object.entries(normalizedTargets).some(([, value]) => !Number.isFinite(value) || value < 0 || value >= 100_000_000)) {
-      setFormError('Nutrient targets must be finite, non-negative values. Leave an optional target blank to remove it.');
+      setFormError('Nutrient targets must be finite, non-negative values. Clear a value to remove its target.');
       return;
     }
     if (baseChanged && !allocationStrategy) {
@@ -140,7 +140,7 @@ export function ProfileTargetEditor({ profile, onDirtyChange }: { profile: Profi
         )}
 
         <div className="target-field-list">
-          <div><h3>Optional nutrient targets</h3><p className="field-hint">Changes start {formatLocalDate(nutrientEffectiveDate, timezone, { weekday: 'long', day: 'numeric', month: 'long' })}. Leave a field blank to remove its target; zero is kept as a real value.</p></div>
+          <div><h3>Nutrient targets</h3><p className="field-hint">Changes start {formatLocalDate(nutrientEffectiveDate, timezone, { weekday: 'long', day: 'numeric', month: 'long' })}. Leave a field blank to remove its target; zero is kept as a real value.</p></div>
           {profile.nutrientFields.map((field) => (
             <NumericField key={field.field_id} id={`edit-target-${field.field_id}`} label={`${field.name} (${field.unit})`} min={0} max={99999999} step="any" inputMode="decimal" placeholder="No target" value={nutrientTargets[field.field_id] ?? ''} onChange={(event) => { setNutrientTargets((current) => ({ ...current, [field.field_id]: event.target.value })); setSavedNotice(''); }} />
           ))}

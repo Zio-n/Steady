@@ -141,8 +141,8 @@ export function OnboardingPage() {
           </div>
 
           <fieldset className="nutrient-fieldset">
-            <legend>Optional nutrients</legend>
-            <p className="field-hint">Choose which nutrients to show. Targets are optional; leaving one blank does not save a zero.</p>
+            <legend>Nutrients</legend>
+            <p className="field-hint">Choose which nutrients to show. Leave a target blank to keep it unset.</p>
             <div className="nutrient-options">
               {nutrientOptions.map((field) => (
                 <div className="nutrient-option" key={field.id}>
@@ -151,7 +151,7 @@ export function OnboardingPage() {
                     <span>{field.name}</span>
                   </label>
                   <label className="nutrient-target" htmlFor={`target-${field.id}`}>
-                    <span className="visually-hidden">Optional {field.name} target in grams</span>
+                    <span className="visually-hidden">{field.name} target in grams</span>
                     <input id={`target-${field.id}`} className="text-field" type="number" min="0" max="99999999" step="any" inputMode="decimal" placeholder="Target" value={nutrientTargets[field.id] ?? ''} onChange={(event) => setNutrientTargets((current) => ({ ...current, [field.id]: event.target.value }))} />
                     <span className="nutrient-unit">g</span>
                   </label>

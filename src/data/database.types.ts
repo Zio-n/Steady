@@ -2,7 +2,7 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
 
 export type Database = {
-  
+
   "graphql_public": {
           Tables: {
             [_ in never]: never
@@ -92,6 +92,114 @@ isOneToOne: false
       referencedColumns: ["user_id","local_date"]
     }
                   ]
+                },"catalog_food_aliases": {
+                  Row: {
+                    "alias": string,"food_id": string,"locale": string,"origin": string,"source_field": string | null
+                  }
+                  Insert: {
+                    "alias": string,"food_id": string,"locale"?: string,"origin"?: string,"source_field"?: string | null
+                  }
+                  Update: {
+                    "alias"?: string,"food_id"?: string,"locale"?: string,"origin"?: string,"source_field"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "catalog_food_aliases_food_id_fkey"
+      columns: ["food_id"]
+isOneToOne: false
+      referencedRelation: "catalog_foods"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"catalog_food_nutrients": {
+                  Row: {
+                    "basis_amount": number,"basis_unit": string,"food_id": string,"normalization_status": string,"nutrient_code": string,"source_nutrient_name": string | null,"source_original_unit": string | null,"source_original_value": number | null,"source_unit": string,"value": number | null,"value_unit": string | null
+                  }
+                  Insert: {
+                    "basis_amount": number,"basis_unit": string,"food_id": string,"normalization_status"?: string,"nutrient_code": string,"source_nutrient_name"?: string | null,"source_original_unit"?: string | null,"source_original_value"?: number | null,"source_unit": string,"value"?: number | null,"value_unit"?: string | null
+                  }
+                  Update: {
+                    "basis_amount"?: number,"basis_unit"?: string,"food_id"?: string,"normalization_status"?: string,"nutrient_code"?: string,"source_nutrient_name"?: string | null,"source_original_unit"?: string | null,"source_original_value"?: number | null,"source_unit"?: string,"value"?: number | null,"value_unit"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "catalog_food_nutrients_food_id_fkey"
+      columns: ["food_id"]
+isOneToOne: false
+      referencedRelation: "catalog_foods"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "catalog_food_nutrients_nutrient_code_fkey"
+      columns: ["nutrient_code"]
+isOneToOne: false
+      referencedRelation: "catalog_nutrient_definitions"
+      referencedColumns: ["nutrient_code"]
+    }
+                  ]
+                },"catalog_food_portions": {
+                  Row: {
+                    "amount": number,"food_id": string,"grams": number | null,"id": string,"is_default": boolean,"label": string,"millilitres": number | null,"source_record_id": string | null,"unit": string
+                  }
+                  Insert: {
+                    "amount": number,"food_id": string,"grams"?: number | null,"id"?: string,"is_default"?: boolean,"label": string,"millilitres"?: number | null,"source_record_id"?: string | null,"unit": string
+                  }
+                  Update: {
+                    "amount"?: number,"food_id"?: string,"grams"?: number | null,"id"?: string,"is_default"?: boolean,"label"?: string,"millilitres"?: number | null,"source_record_id"?: string | null,"unit"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "catalog_food_portions_food_id_fkey"
+      columns: ["food_id"]
+isOneToOne: false
+      referencedRelation: "catalog_foods"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"catalog_foods": {
+                  Row: {
+                    "allergen_traces": string | null,"allergens": string | null,"barcode": string | null,"basis_amount": number,"basis_unit": string,"brand": string | null,"category": string | null,"country_code": string | null,"created_at": string,"data_kind": string,"food_form": string | null,"id": string,"imported_at": string,"ingredients": string | null,"is_active": boolean,"locale": string | null,"name": string,"package_quantity": number | null,"package_unit": string | null,"preparation": string | null,"quality_status": string,"source_id": string,"source_metadata": NonNullable<Json>,"source_record_id": string,"source_updated_at": string | null,"updated_at": string
+                  }
+                  Insert: {
+                    "allergen_traces"?: string | null,"allergens"?: string | null,"barcode"?: string | null,"basis_amount": number,"basis_unit": string,"brand"?: string | null,"category"?: string | null,"country_code"?: string | null,"created_at"?: string,"data_kind": string,"food_form"?: string | null,"id"?: string,"imported_at"?: string,"ingredients"?: string | null,"is_active"?: boolean,"locale"?: string | null,"name": string,"package_quantity"?: number | null,"package_unit"?: string | null,"preparation"?: string | null,"quality_status"?: string,"source_id": string,"source_metadata"?: NonNullable<Json>,"source_record_id": string,"source_updated_at"?: string | null,"updated_at"?: string
+                  }
+                  Update: {
+                    "allergen_traces"?: string | null,"allergens"?: string | null,"barcode"?: string | null,"basis_amount"?: number,"basis_unit"?: string,"brand"?: string | null,"category"?: string | null,"country_code"?: string | null,"created_at"?: string,"data_kind"?: string,"food_form"?: string | null,"id"?: string,"imported_at"?: string,"ingredients"?: string | null,"is_active"?: boolean,"locale"?: string | null,"name"?: string,"package_quantity"?: number | null,"package_unit"?: string | null,"preparation"?: string | null,"quality_status"?: string,"source_id"?: string,"source_metadata"?: NonNullable<Json>,"source_record_id"?: string,"source_updated_at"?: string | null,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "catalog_foods_source_id_fkey"
+      columns: ["source_id"]
+isOneToOne: false
+      referencedRelation: "catalog_sources"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"catalog_nutrient_definitions": {
+                  Row: {
+                    "name": string,"nutrient_code": string,"sort_order": number,"standard_unit": string
+                  }
+                  Insert: {
+                    "name": string,"nutrient_code": string,"sort_order"?: number,"standard_unit": string
+                  }
+                  Update: {
+                    "name"?: string,"nutrient_code"?: string,"sort_order"?: number,"standard_unit"?: string
+                  }
+                  Relationships: [
+
+                  ]
+                },"catalog_sources": {
+                  Row: {
+                    "attribution": string | null,"created_at": string,"enabled": boolean,"id": string,"licence": string,"name": string,"source_url": string
+                  }
+                  Insert: {
+                    "attribution"?: string | null,"created_at"?: string,"enabled"?: boolean,"id": string,"licence": string,"name": string,"source_url": string
+                  }
+                  Update: {
+                    "attribution"?: string | null,"created_at"?: string,"enabled"?: boolean,"id"?: string,"licence"?: string,"name"?: string,"source_url"?: string
+                  }
+                  Relationships: [
+
+                  ]
                 },"day_item_history": {
                   Row: {
                     "action": string,"changed_at": string,"eaten_snapshot": NonNullable<Json>,"event_id": string,"item_id": string,"item_revision": number,"selected_amount": number | null,"selected_unit": string | null,"state": Database["public"]['Enums']["day_item_state"],"user_id": string
@@ -149,6 +257,31 @@ isOneToOne: false
       referencedColumns: ["user_id","week_start"]
     }
                   ]
+                },"food_catalogue_origins": {
+                  Row: {
+                    "catalog_food_id": string,"created_at": string,"food_id": string,"is_personally_adjusted": boolean,"user_id": string
+                  }
+                  Insert: {
+                    "catalog_food_id": string,"created_at"?: string,"food_id": string,"is_personally_adjusted"?: boolean,"user_id": string
+                  }
+                  Update: {
+                    "catalog_food_id"?: string,"created_at"?: string,"food_id"?: string,"is_personally_adjusted"?: boolean,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "food_catalogue_origins_catalog_food_id_fkey"
+      columns: ["catalog_food_id"]
+isOneToOne: false
+      referencedRelation: "catalog_foods"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "food_catalogue_origins_user_id_food_id_fkey"
+      columns: ["user_id","food_id"]
+isOneToOne: true
+      referencedRelation: "foods"
+      referencedColumns: ["user_id","id"]
+    }
+                  ]
                 },"food_nutrients": {
                   Row: {
                     "field_id": string,"food_id": string,"user_id": string,"value": number | null
@@ -174,6 +307,19 @@ isOneToOne: false
       referencedColumns: ["user_id","id"]
     }
                   ]
+                },"user_food_portion_preferences": {
+                  Row: {
+                    "amount": number,"food_id": string,"food_kind": string,"unit": string,"updated_at": string,"user_id": string
+                  }
+                  Insert: {
+                    "amount": number,"food_id": string,"food_kind": string,"unit": string,"updated_at"?: string,"user_id": string
+                  }
+                  Update: {
+                    "amount"?: number,"food_id"?: string,"food_kind"?: string,"unit"?: string,"updated_at"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+
+                  ]
                 },"foods": {
                   Row: {
                     "archived_at": string | null,"basis_amount": number,"basis_unit": string,"brand": string | null,"calories_kcal": number | null,"created_at": string,"default_portion_amount": number,"default_portion_unit": string,"grams_per_serving": number | null,"id": string,"name": string,"revision": number,"updated_at": string,"user_id": string
@@ -185,7 +331,7 @@ isOneToOne: false
                     "archived_at"?: string | null,"basis_amount"?: number,"basis_unit"?: string,"brand"?: string | null,"calories_kcal"?: number | null,"created_at"?: string,"default_portion_amount"?: number,"default_portion_unit"?: string,"grams_per_serving"?: number | null,"id"?: string,"name"?: string,"revision"?: number,"updated_at"?: string,"user_id"?: string
                   }
                   Relationships: [
-                    
+
                   ]
                 },"meal_components": {
                   Row: {
@@ -223,7 +369,7 @@ isOneToOne: false
                     "archived_at"?: string | null,"created_at"?: string,"declared_total_weight_g"?: number | null,"id"?: string,"name"?: string,"revision"?: number,"sections"?: (Database["public"]['Enums']["meal_section"])[],"updated_at"?: string,"user_id"?: string
                   }
                   Relationships: [
-                    
+
                   ]
                 },"mutation_receipts": {
                   Row: {
@@ -236,7 +382,7 @@ isOneToOne: false
                     "created_at"?: string,"input_fingerprint"?: string,"operation"?: string,"request_id"?: string,"result"?: NonNullable<Json>,"user_id"?: string
                   }
                   Relationships: [
-                    
+
                   ]
                 },"nutrient_fields": {
                   Row: {
@@ -249,7 +395,7 @@ isOneToOne: false
                     "archived_at"?: string | null,"created_at"?: string,"display_order"?: number,"field_id"?: string,"is_displayed"?: boolean,"name"?: string,"standard_key"?: string | null,"unit"?: string,"user_id"?: string
                   }
                   Relationships: [
-                    
+
                   ]
                 },"profile_target_versions": {
                   Row: {
@@ -262,7 +408,7 @@ isOneToOne: false
                     "base_daily_target_kcal"?: number | null,"created_at"?: string,"effective_from"?: string,"nutrient_field_snapshot"?: NonNullable<Json>,"nutrient_targets"?: NonNullable<Json>,"revision"?: number,"timezone"?: string,"user_id"?: string
                   }
                   Relationships: [
-                    
+
                   ]
                 },"profiles": {
                   Row: {
@@ -275,7 +421,7 @@ isOneToOne: false
                     "base_daily_target_kcal"?: number | null,"created_at"?: string,"onboarding_complete"?: boolean,"revision"?: number,"timezone"?: string,"updated_at"?: string,"user_id"?: string
                   }
                   Relationships: [
-                    
+
                   ]
                 },"routine_shuffle_suggestions": {
                   Row: {
@@ -338,7 +484,7 @@ isOneToOne: false
                     "created_at"?: string,"effective_from"?: string,"id"?: string,"revision"?: number,"user_id"?: string
                   }
                   Relationships: [
-                    
+
                   ]
                 },"week_allocations": {
                   Row: {
@@ -389,7 +535,7 @@ isOneToOne: false
                     "base_daily_target_kcal"?: number,"created_at"?: string,"effective_week_start"?: string,"id"?: string,"user_id"?: string
                   }
                   Relationships: [
-                    
+
                   ]
                 },"weeks": {
                   Row: {
@@ -425,8 +571,14 @@ isOneToOne: false
 "calendar_log_day_item":
 { Args: { "p_amount": number,"p_expected_item_revision"?: number,"p_local_date": string,"p_manual_payload"?: Json,"p_planned_item_id"?: string,"p_request_id": string,"p_section": Database["public"]['Enums']["meal_section"],"p_source_id": string,"p_source_kind": string,"p_unit": string }; Returns: Json
                            },
+"calendar_log_day_items":
+{ Args: { "p_items": Json }; Returns: Json
+                           },
 "calendar_plan_day_item":
 { Args: { "p_amount": number,"p_local_date": string,"p_manual_payload"?: Json,"p_request_id": string,"p_section": Database["public"]['Enums']["meal_section"],"p_source_id": string,"p_source_kind": string,"p_unit": string }; Returns: Json
+                           },
+"calendar_plan_day_items":
+{ Args: { "p_items": Json }; Returns: Json
                            },
 "complete_calendar_setup":
 { Args: { "p_request_id": string,"p_target_kcal"?: number,"p_timezone": string }; Returns: Json
@@ -455,8 +607,14 @@ isOneToOne: false
 "log_day_item":
 { Args: { "p_amount": number,"p_expected_item_revision"?: number,"p_local_date": string,"p_manual_payload"?: Json,"p_planned_item_id"?: string,"p_request_id": string,"p_section": Database["public"]['Enums']["meal_section"],"p_source_id": string,"p_source_kind": string,"p_unit": string }; Returns: Json
                            },
+"log_day_items":
+{ Args: { "p_items": Json }; Returns: Json
+                           },
 "plan_day_item":
 { Args: { "p_amount": number,"p_local_date": string,"p_manual_payload"?: Json,"p_request_id": string,"p_section": Database["public"]['Enums']["meal_section"],"p_source_id": string,"p_source_kind": string,"p_unit": string }; Returns: Json
+                           },
+"plan_day_items":
+{ Args: { "p_items": Json }; Returns: Json
                            },
 "read_calendar_day":
 { Args: { "p_local_date": string }; Returns: Json
@@ -500,6 +658,9 @@ isOneToOne: false
 "save_carry_decision":
 { Args: { "p_action": Database["public"]['Enums']["carry_action"],"p_allocations": Json,"p_amount_kcal": number,"p_expected_log_revision": number,"p_expected_source_revision": number,"p_expected_week_revision": number,"p_request_id": string,"p_source_date": string,"p_week_start": string }; Returns: Json
                            },
+"save_catalog_food_copy":
+{ Args: { "p_basis_amount": number,"p_basis_unit": string,"p_brand": string,"p_calories_kcal": number,"p_catalog_food_id": string,"p_default_portion_amount": number,"p_default_portion_unit": string,"p_is_personally_adjusted": boolean,"p_name": string,"p_nutrients": Json,"p_request_id": string }; Returns: Json
+                           },
 "save_food":
 { Args: { "p_basis_amount": number,"p_basis_unit": string,"p_brand": string,"p_calories_kcal": number,"p_default_portion_amount": number,"p_default_portion_unit": string,"p_expected_revision": number,"p_food_id": string,"p_grams_per_serving": number,"p_name": string,"p_nutrients": Json,"p_request_id": string }; Returns: Json
                            },
@@ -519,6 +680,11 @@ isOneToOne: false
 { Args: { "p_expected_revision": number,"p_request_id": string,"p_targets": Json,"p_week_start": string }; Returns: Json
                            } |
 { Args: { "p_allocation_kind": Database["public"]['Enums']["allocation_kind"],"p_expected_revision": number,"p_request_id": string,"p_targets": Json,"p_week_start": string }; Returns: Json
+                           },
+"search_catalog_foods":
+{ Args: { "p_limit"?: number,"p_locale"?: string,"p_query": string }; Returns: {
+              "basis_amount": number,"basis_unit": string,"brand": string,"calories_kcal": number,"data_kind": string,"food_id": string,"locale": string,"match_locale": string,"match_score": number,"matched_alias": string,"matched_by": string,"name": string,"nutrients": Json,"protein_g": number,"quality_status": string,"source_id": string,"source_licence": string,"source_name": string
+            }[]
                            },
 "transfer_calendar_plan":
 { Args: { "p_action": string,"p_expected_item_revision": number,"p_from_date": string,"p_item_id": string,"p_request_id": string,"p_to_date": string }; Returns: Json
@@ -644,7 +810,7 @@ export type CompositeTypes<
 export const Constants = {
   "graphql_public": {
           Enums: {
-            
+
           }
         },"public": {
           Enums: {

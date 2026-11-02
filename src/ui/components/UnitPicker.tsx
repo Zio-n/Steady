@@ -17,6 +17,28 @@ const commonUnits = [
   { value: 'pack', label: 'pack' },
 ];
 
+/** Compact, non-searchable unit control for inline portion editing. */
+export function UnitSelect({ id, value, onChange, label = 'Unit', units }: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  label?: string;
+  units?: string[];
+}) {
+  const values = units?.length ? [...new Set([...units, value])] : commonUnits.map((unit) => unit.value);
+  const options = values.map((unit) => commonUnits.find((option) => option.value === unit) ?? { value: unit, label: unit });
+
+  return <div className="form-field choice-result-unit-select">
+    <label className="visually-hidden" htmlFor={id}>{label}</label>
+    <span className="choice-result-unit-select-control">
+      <select id={id} className="text-field" value={value} onChange={(event) => onChange(event.target.value)}>
+        {options.map((unit) => <option key={unit.value} value={unit.value}>{unit.value}</option>)}
+      </select>
+      <ChevronDown size={14} aria-hidden="true" />
+    </span>
+  </div>;
+}
+
 export function UnitPicker({ id, value, onChange, label = 'Unit' }: {
   id: string;
   value: string;
