@@ -11,6 +11,8 @@ export type CapturedNutrient = CapturedMetric & { name: string; unit: string };
 export type EatenItemSnapshot = {
   schema_version: 1;
   name: string;
+  brand?: string | null;
+  display_measure?: { kind: 'weight' | 'volume'; value: number } | null;
   source: 'food' | 'meal' | 'routine' | 'one_off_food' | 'one_off_meal';
   source_id: string | null;
   captured_at: string | null;
@@ -18,8 +20,9 @@ export type EatenItemSnapshot = {
   selected_unit: string;
   calories: CapturedMetric;
   nutrients: Record<string, CapturedNutrient>;
+  components?: unknown[];
 };
-export type DayItem = Pick<Tables<'day_items'>, 'id' | 'section' | 'state' | 'source' | 'selected_amount' | 'selected_unit' | 'planned_payload' | 'eaten_snapshot' | 'eaten_at' | 'revision'>;
+export type DayItem = Pick<Tables<'day_items'>, 'id' | 'section' | 'state' | 'source' | 'selected_amount' | 'selected_unit' | 'planned_payload' | 'eaten_snapshot' | 'eaten_at' | 'revision'> & { meal_group_id?: string | null };
 export type SummaryMetric = { value: number | null; complete: boolean; knownEntries: number; totalEntries: number };
 
 function object(value: Json | null): Record<string, Json | undefined> | null {
@@ -54,9 +57,12 @@ export function readEatenSnapshot(value: Json | null): EatenItemSnapshot | null 
     if (metric && row && typeof row.name === 'string' && typeof row.unit === 'string') nutrients[fieldId] = { ...metric, name: row.name, unit: row.unit };
   }
   return {
-    schema_version: 1, name: data.name, source: data.source, source_id: typeof data.source_id === 'string' ? data.source_id : null,
+    schema_version: 1, name: data.name, brand: typeof data.brand === 'string' ? data.brand : null,
+    display_measure: (() => { const measure = object(data.display_measure ?? null); return measure && (measure.kind === 'weight' || measure.kind === 'volume') && typeof measure.value === 'number' && Number.isFinite(measure.value) && measure.value > 0 ? { kind: measure.kind, value: measure.value } : null; })(),
+    source: data.source, source_id: typeof data.source_id === 'string' ? data.source_id : null,
     captured_at: typeof data.captured_at === 'string' ? data.captured_at : null,
     selected_amount: data.selected_amount, selected_unit: data.selected_unit, calories, nutrients,
+    components: Array.isArray(data.components) ? data.components : [],
   };
 }
 
@@ -81,7 +87,8 @@ export function summarizeDay(items: DayItem[], displayedFieldIds: string[]) {
     fieldId,
     summarize(snapshots.map((snapshot) => snapshot?.nutrients[fieldId] ?? null)),
   ]));
-  return { calories, nutrients, eatenCount: eaten.length, plannedCount: items.filter((item) => item.state === 'planned').length };
+  const countMeals = (entries: DayItem[]) => new Set(entries.map((item) => item.meal_group_id ?? item.id)).size;
+  return { calories, nutrients, eatenCount: countMeals(eaten), plannedCount: countMeals(items.filter((item) => item.state === 'planned')) };
 }
 
 export function plannedItemName(payload: Json): string | null {
@@ -91,6 +98,13 @@ export function plannedItemName(payload: Json): string | null {
     if (typeof data[key] === 'string' && data[key].trim()) return data[key];
   }
   return null;
+}
+
+export function readPlannedMeasure(payload: Json): { kind: 'weight' | 'volume'; value: number } | null {
+  const measure = object(object(payload)?.display_measure ?? null);
+  return measure && (measure.kind === 'weight' || measure.kind === 'volume')
+    && typeof measure.value === 'number' && Number.isFinite(measure.value) && measure.value > 0
+    ? { kind: measure.kind, value: measure.value } : null;
 }
 
 export type PlannedChoice = {

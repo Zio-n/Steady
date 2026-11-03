@@ -35,6 +35,18 @@ export type ReviseDayItemInput = {
   unit?: string;
 };
 
+export type EditCalendarFoodSnapshotInput = {
+  requestId: string;
+  localDate: string;
+  itemId: string;
+  expectedRevision: number;
+  componentIndex: number;
+  name: string;
+  brand: string | null;
+  caloriesPerBasis: number;
+  nutrientsPerBasis: Record<string, number | null>;
+};
+
 export type ReplaceDayItemInput = {
   requestId: string;
   localDate: string;
@@ -353,6 +365,24 @@ export async function reviseDayItem(input: ReviseDayItemInput) {
     p_action: input.action,
     p_amount: input.amount,
     p_unit: input.unit,
+  });
+  if (error) throw toDataError(error);
+  return data;
+}
+
+/** Saves an item-specific nutrition correction into this eaten entry's frozen snapshot. */
+export async function editCalendarFoodSnapshot(input: EditCalendarFoodSnapshotInput) {
+  if (!supabase) throw new DataError('Connect Supabase before editing this meal.', 'configuration');
+  const { data, error } = await supabase.rpc('edit_calendar_food_snapshot', {
+    p_request_id: input.requestId,
+    p_local_date: input.localDate,
+    p_item_id: input.itemId,
+    p_expected_item_revision: input.expectedRevision,
+    p_component_index: input.componentIndex,
+    p_name: input.name,
+    p_brand: input.brand,
+    p_calories_per_basis: input.caloriesPerBasis,
+    p_nutrients_per_basis: input.nutrientsPerBasis as Json,
   });
   if (error) throw toDataError(error);
   return data;

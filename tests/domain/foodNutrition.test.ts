@@ -33,6 +33,11 @@ test('a custom named portion converts only when that exact unit is explicitly ma
   assert.equal(convertFoodAmount(1, 'slice', 'g', 40), null);
 });
 
+test('a standard mass unit remains mass even when it is also the default portion unit', () => {
+  const portion = calculateFoodPortion({ ...oats, servingUnit: 'g' }, 100, 'g');
+  assert.equal(portion.ok && portion.caloriesKcal, 380);
+});
+
 test('portion calculation scales known values but preserves unknown and zero', () => {
   const portion = calculateFoodPortion(oats, 1, 'serving');
 

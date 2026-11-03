@@ -23,6 +23,7 @@ export type CalendarChoice = {
   amount: number;
   unit: string;
   manualPayload?: Record<string, unknown>;
+  measure?: { kind: 'weight' | 'volume'; value: number } | null;
   plannedItemId?: string;
   expectedItemRevision?: number;
 };
@@ -102,15 +103,18 @@ export async function logCalendarItem(input: CalendarChoice) {
   return data;
 }
 
-/** Logs several foods together while retaining an independent snapshot for each food. */
+/** Logs one meal occurrence with independently captured food snapshots. */
 export async function logCalendarItems(inputs: CalendarChoice[]) {
   if (!supabase) throw new DataError('Connect Supabase before logging a meal.', 'configuration');
-  if (inputs.length < 2) throw new DataError('A batch needs at least two entries.', 'validation');
+  if (inputs.length < 1) throw new DataError('A meal needs at least one entry.', 'validation');
+  const mealGroupId = inputs[0]!.requestId;
   const { data, error } = await supabase.rpc('calendar_log_day_items', {
     p_items: inputs.map((input) => ({
       request_id: input.requestId, local_date: input.localDate, section: input.section,
+      meal_group_id: mealGroupId,
       source_kind: input.sourceKind, source_id: input.sourceId, amount: input.amount, unit: input.unit,
       manual_payload: input.manualPayload ?? null, planned_item_id: input.plannedItemId ?? null,
+      display_measure: input.measure ?? null,
       expected_item_revision: input.expectedItemRevision ?? null,
     })) as unknown as Json,
   });
@@ -118,15 +122,18 @@ export async function logCalendarItems(inputs: CalendarChoice[]) {
   return data;
 }
 
-/** Plans several foods together in one transaction. */
+/** Plans one meal occurrence with one or more foods. */
 export async function planCalendarItems(inputs: CalendarChoice[]) {
   if (!supabase) throw new DataError('Connect Supabase before planning a meal.', 'configuration');
-  if (inputs.length < 2) throw new DataError('A batch needs at least two entries.', 'validation');
+  if (inputs.length < 1) throw new DataError('A meal needs at least one entry.', 'validation');
+  const mealGroupId = inputs[0]!.requestId;
   const { data, error } = await supabase.rpc('calendar_plan_day_items', {
     p_items: inputs.map((input) => ({
       request_id: input.requestId, local_date: input.localDate, section: input.section,
+      meal_group_id: mealGroupId,
       source_kind: input.sourceKind, source_id: input.sourceId, amount: input.amount, unit: input.unit,
       manual_payload: input.manualPayload ?? null,
+      display_measure: input.measure ?? null,
     })) as unknown as Json,
   });
   if (error) throw toDataError(error);

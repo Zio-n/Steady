@@ -82,7 +82,8 @@ export function calculateFoodPortion(food: PortionFood, amount: number, unit: st
     return { ok: false, reason: 'invalid_basis' };
   }
   const basisDimension = unitFor(food.basisUnit).dimension;
-  const normalizedUnit = food.servingUnit && unit.trim().toLocaleLowerCase('en-US') === food.servingUnit.trim().toLocaleLowerCase('en-US')
+  const normalizedUnit = unitFor(unit).dimension === 'custom' && food.servingUnit
+    && unit.trim().toLocaleLowerCase('en-US') === food.servingUnit.trim().toLocaleLowerCase('en-US')
     ? 'serving' : unit;
   const amountInBasisUnit = convertFoodAmount(amount, normalizedUnit, food.basisUnit, food.gramsPerServing,
     basisDimension === 'mass' || basisDimension === 'volume' ? basisDimension : null);

@@ -221,13 +221,13 @@ isOneToOne: false
                   ]
                 },"day_items": {
                   Row: {
-                    "created_at": string,"eaten_at": string | null,"eaten_snapshot": Json | null,"id": string,"local_date": string,"manual_override": boolean,"planned_payload": NonNullable<Json>,"revision": number,"routine_occurrence_key": string | null,"section": Database["public"]['Enums']["meal_section"],"selected_amount": number | null,"selected_unit": string | null,"source": Database["public"]['Enums']["day_item_source"],"state": Database["public"]['Enums']["day_item_state"],"updated_at": string,"user_id": string
+                    "created_at": string,"eaten_at": string | null,"eaten_snapshot": Json | null,"id": string,"local_date": string,"manual_override": boolean,"meal_group_id": string | null,"planned_payload": NonNullable<Json>,"revision": number,"routine_occurrence_key": string | null,"section": Database["public"]['Enums']["meal_section"],"selected_amount": number | null,"selected_unit": string | null,"source": Database["public"]['Enums']["day_item_source"],"state": Database["public"]['Enums']["day_item_state"],"updated_at": string,"user_id": string
                   }
                   Insert: {
-                    "created_at"?: string,"eaten_at"?: string | null,"eaten_snapshot"?: Json | null,"id"?: string,"local_date": string,"manual_override"?: boolean,"planned_payload"?: NonNullable<Json>,"revision"?: number,"routine_occurrence_key"?: string | null,"section": Database["public"]['Enums']["meal_section"],"selected_amount"?: number | null,"selected_unit"?: string | null,"source": Database["public"]['Enums']["day_item_source"],"state"?: Database["public"]['Enums']["day_item_state"],"updated_at"?: string,"user_id": string
+                    "created_at"?: string,"eaten_at"?: string | null,"eaten_snapshot"?: Json | null,"id"?: string,"local_date": string,"manual_override"?: boolean,"meal_group_id"?: string | null,"planned_payload"?: NonNullable<Json>,"revision"?: number,"routine_occurrence_key"?: string | null,"section": Database["public"]['Enums']["meal_section"],"selected_amount"?: number | null,"selected_unit"?: string | null,"source": Database["public"]['Enums']["day_item_source"],"state"?: Database["public"]['Enums']["day_item_state"],"updated_at"?: string,"user_id": string
                   }
                   Update: {
-                    "created_at"?: string,"eaten_at"?: string | null,"eaten_snapshot"?: Json | null,"id"?: string,"local_date"?: string,"manual_override"?: boolean,"planned_payload"?: NonNullable<Json>,"revision"?: number,"routine_occurrence_key"?: string | null,"section"?: Database["public"]['Enums']["meal_section"],"selected_amount"?: number | null,"selected_unit"?: string | null,"source"?: Database["public"]['Enums']["day_item_source"],"state"?: Database["public"]['Enums']["day_item_state"],"updated_at"?: string,"user_id"?: string
+                    "created_at"?: string,"eaten_at"?: string | null,"eaten_snapshot"?: Json | null,"id"?: string,"local_date"?: string,"manual_override"?: boolean,"meal_group_id"?: string | null,"planned_payload"?: NonNullable<Json>,"revision"?: number,"routine_occurrence_key"?: string | null,"section"?: Database["public"]['Enums']["meal_section"],"selected_amount"?: number | null,"selected_unit"?: string | null,"source"?: Database["public"]['Enums']["day_item_source"],"state"?: Database["public"]['Enums']["day_item_state"],"updated_at"?: string,"user_id"?: string
                   }
                   Relationships: [
                     {
@@ -597,6 +597,9 @@ isOneToOne: false
                            },
 "ensure_day_snapshot":
 { Args: { "p_local_date": string }; Returns: Json
+                           },
+"edit_calendar_food_snapshot":
+{ Args: { "p_brand": string | null,"p_calories_per_basis": number,"p_component_index": number,"p_expected_item_revision": number,"p_item_id": string,"p_local_date": string,"p_name": string,"p_nutrients_per_basis": Json,"p_request_id": string }; Returns: Json
                            },
 "ensure_routine_day":
 { Args: { "p_local_date": string }; Returns: Json

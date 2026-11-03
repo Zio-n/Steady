@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { createPortal } from 'react-dom';
 import { BookMarked, Check, ChevronDown, Pencil, Search, Trash2 } from 'lucide-react';
 import type { NutrientField } from '../../data/repositories/profileRepository';
 import { loadFoodEntry, loadFoodLibrary, type FoodWithNutrients } from '../../data/repositories/foodRepository';
@@ -8,7 +9,7 @@ import { loadMealEntry, loadMeals, type SavedMeal } from '../../data/repositorie
 import { loadRecentChoices } from '../../data/repositories/dayRepository';
 import { queryKeys } from '../../data/queryKeys';
 import { loadFoodPortionPreferences, type PortionPreferenceKey } from '../../data/repositories/foodPortionPreferenceRepository';
-import { calculateFoodPortion } from '../../domain/foodNutrition.ts';
+import { calculateFoodPortion, convertFoodAmount } from '../../domain/foodNutrition.ts';
 import { calculateMealNutrition } from '../../domain/mealNutrition.ts';
 import { isPreviewableQuantity, isValidQuantity, QUANTITY_MAX, QUANTITY_MIN, QUANTITY_STEP } from '../../domain/numericLimits';
 import { choiceMatchScore } from '../../domain/choiceSearch.ts';
@@ -16,6 +17,7 @@ import { OneOffFoodForm } from './OneOffFoodForm';
 import { OneOffMealForm } from './OneOffMealForm';
 import { Button } from '../../ui/components/Button';
 import { Dialog } from '../../ui/components/Dialog';
+import { CalendarMealCard } from '../../ui/components/CalendarMealCard';
 import { Field, NumericField } from '../../ui/components/Field';
 import { LoadingSkeleton } from '../../ui/components/LoadingSkeleton';
 import { StatusMessage } from '../../ui/components/StatusMessage';
@@ -24,8 +26,11 @@ import { CatalogFoodCorrectionForm, type CatalogueFoodCorrection } from '../libr
 
 type Selection = { kind: 'food'; value: FoodWithNutrients } | { kind: 'meal'; value: SavedMeal };
 type Result = Selection & { score: number };
+function DraftHost({ calendar, host, children }: { calendar: boolean; host: HTMLElement | null; children: React.ReactNode }) {
+  return calendar ? host ? createPortal(children, host) : null : children;
+}
 export type MealLabel = 'breakfast' | 'lunch' | 'dinner' | 'snack' | 'unlabelled';
-export type PreparedChoice = { kind: Selection['kind'] | 'one_off_food' | 'one_off_meal'; id: string; name: string; amount: number; unit: string; section: MealLabel; requestId?: string; snapshot?: Record<string, unknown>; plannedItemId?: string; expectedItemRevision?: number };
+export type PreparedChoice = { kind: Selection['kind'] | 'one_off_food' | 'one_off_meal'; id: string; name: string; amount: number; unit: string; section: MealLabel; requestId?: string; snapshot?: Record<string, unknown>; measure?: { kind: 'weight' | 'volume'; value: number } | null; plannedItemId?: string; expectedItemRevision?: number };
 type DraftItem = { key: string; choice: PreparedChoice; amount: string; unit: string; food?: FoodWithNutrients; meal?: SavedMeal; catalogueFood?: CatalogFoodSearchResult; editingDetails?: boolean };
 type PortionDraft = { amount: string; unit: string };
 type DraftNutrient = { value: number | null; complete: boolean };
@@ -70,7 +75,7 @@ function portionCountLabel(amount: string, unit: string) {
   const count = Number(amount);
   const normalized = unit.trim();
   const fixedUnits = new Set(['g', 'kg', 'mg', 'mcg', 'ml', 'l']);
-  const displayedUnit = count === 1 || fixedUnits.has(normalized) ? normalized
+  const displayedUnit = count <= 1 || fixedUnits.has(normalized) ? normalized
     : normalized.endsWith('y') ? `${normalized.slice(0, -1)}ies`
       : `${normalized}${normalized.endsWith('s') ? '' : 's'}`;
   return `${amount} ${displayedUnit}`;
@@ -142,16 +147,18 @@ function mealNutrition(entry: SavedMeal, fields: NutrientField[], multiplier = 1
   })), fields.map((field) => field.field_id), multiplier);
 }
 
-export function AddChoiceDialog({ open, userId, fields, futureDate, onClose, onPrepared, onSavedOnly, initialSection = 'unlabelled', dialogTitle, submitLabel, actionMode, onActionModeChange, dateLabel, anchor }: {
+export function AddChoiceDialog({ open, userId, fields, futureDate, onClose, onPrepared, onSavedOnly, initialSection = 'unlabelled', dialogTitle, submitLabel, actionMode, onActionModeChange, dateLabel, anchor, draftHost = null, onDraftCountChange, onResumeSearch, onDiscardDraft }: {
   open: boolean; userId: string; fields: NutrientField[]; futureDate: boolean;
   initialSection?: MealLabel; dialogTitle?: string; submitLabel?: string;
   actionMode?: 'log' | 'plan'; onActionModeChange?: (action: 'log' | 'plan') => void;
   dateLabel?: string; anchor?: { left: number; top: number; width: number } | null;
+  draftHost?: HTMLElement | null; onDraftCountChange?: (count: number) => void; onResumeSearch?: () => void; onDiscardDraft?: () => void;
   onClose: () => void; onPrepared: (choice: PreparedChoice | PreparedChoice[]) => void;
   onSavedOnly?: (name: string) => void;
 }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
+  const [draftDetailHost, setDraftDetailHost] = useState<HTMLDivElement | null>(null);
   const [catalogueQuery, setCatalogueQuery] = useState('');
   const [catalogueSelection, setCatalogueSelection] = useState<CatalogFoodSearchResult | null>(null);
   const [selectedCatalogueFood, setSelectedCatalogueFood] = useState<CatalogFoodSearchResult | null>(null);
@@ -162,7 +169,6 @@ export function AddChoiceDialog({ open, userId, fields, futureDate, onClose, onP
   const [resultPortions, setResultPortions] = useState<Record<string, PortionDraft>>({});
   const [editingResultPortionKey, setEditingResultPortionKey] = useState<string | null>(null);
   const editingPortionOriginal = useRef<{ key: string; portion: PortionDraft } | null>(null);
-  const [showAllDraftNutrients, setShowAllDraftNutrients] = useState(false);
   const [newMode, setNewMode] = useState<'item' | 'ingredients' | null>(null);
   const [newDirty, setNewDirty] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -178,6 +184,12 @@ export function AddChoiceDialog({ open, userId, fields, futureDate, onClose, onP
   const catalogueCopyRequests = useRef(new Map<string, { signature: string; requestId: string }>());
   const activeWrites = useIsMutating();
   const controlId = useId();
+  useEffect(() => {
+    if (!dateLabel || !open) return;
+    const frame = requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.meal-log-composer .choice-search input')?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [dateLabel, open]);
+  useEffect(() => { onDraftCountChange?.(draftItems.length); }, [draftItems.length, onDraftCountChange]);
   const recents = useQuery({ queryKey: queryKeys.recentChoices(userId), queryFn: () => loadRecentChoices(userId), enabled: open, staleTime: 60_000 });
   const portionPreferences = useQuery({
     queryKey: queryKeys.foodPortionPreferences(userId),
@@ -289,7 +301,7 @@ export function AddChoiceDialog({ open, userId, fields, futureDate, onClose, onP
       snapshot: {
         basisAmount: basis.basisAmount, basisUnit: basis.basisUnit, caloriesKcal: basis.caloriesKcal,
         nutrients: basis.nutrients, gramsPerServing: basis.gramsPerServing, servingUnit: basis.servingUnit,
-        catalogueFoodId: food.food_id,
+        catalogueFoodId: food.food_id, brand: food.brand,
       },
     };
   }
@@ -449,6 +461,28 @@ export function AddChoiceDialog({ open, userId, fields, futureDate, onClose, onP
     }));
     return { ok: result.ok, calories: result.ok ? result.caloriesKcal : null, canLog: result.ok && result.canLog, nutrients } satisfies DraftNutrition;
   }
+  function draftMeasure(item: DraftItem): { kind: 'weight' | 'volume'; value: number } | null {
+    if (!isValidQuantity(item.amount)) return null;
+    if (item.meal) {
+      const weight = item.meal.meal.declared_total_weight_g;
+      return weight && weight > 0 ? { kind: 'weight', value: weight * Number(item.amount) } : null;
+    }
+    const source = item.choice.snapshot ? {
+      basisUnit: String(item.choice.snapshot.basisUnit ?? ''),
+      gramsPerServing: typeof item.choice.snapshot.gramsPerServing === 'number' ? item.choice.snapshot.gramsPerServing : null,
+      servingUnit: typeof item.choice.snapshot.servingUnit === 'string' ? item.choice.snapshot.servingUnit : null,
+    } : originalDraftNutrition(item);
+    if (!source) return null;
+    const basisUnit = source.basisUnit.trim().toLocaleLowerCase();
+    const kind = Object.hasOwn(massFactors, basisUnit) ? 'weight' : Object.hasOwn(volumeFactors, basisUnit) ? 'volume' : null;
+    if (!kind) return null;
+    const targetUnit = kind === 'weight' ? 'g' : 'ml';
+    let value = convertFoodAmount(Number(item.amount), item.unit, targetUnit, source.gramsPerServing);
+    if (value === null && source.servingUnit?.trim().toLocaleLowerCase() === item.unit.trim().toLocaleLowerCase()) {
+      value = convertFoodAmount(Number(item.amount), 'serving', targetUnit, source.gramsPerServing);
+    }
+    return value !== null && Number.isFinite(value) ? { kind, value } : null;
+  }
   const draftNutritionValues = draftItems.map((item) => draftNutrition(item));
   const draftCaloriesComplete = draftNutritionValues.every((value) => value.ok && value.calories !== null);
   const draftHasKnownCalories = draftNutritionValues.some((value) => value.calories !== null);
@@ -458,7 +492,11 @@ export function AddChoiceDialog({ open, userId, fields, futureDate, onClose, onP
     const knownValues = values.flatMap((entry) => entry.value === null ? [] : [entry.value]);
     return { field, value: knownValues.length ? knownValues.reduce((sum, value) => sum + value, 0) : null, complete: values.every((entry) => entry.complete) };
   });
-  const visibleDraftNutrients = showAllDraftNutrients ? draftNutrientTotals : draftNutrientTotals.slice(0, 4);
+  const primaryDraftNutrients = ['protein', 'carbohydrate', 'fat'].flatMap((key) => draftNutrientTotals.filter(({ field }) => field.standard_key === key));
+  const draftMeasures = draftItems.map(draftMeasure);
+  const allDraftMeasuresKnown = draftMeasures.every((measure) => measure !== null);
+  const totalWeight = allDraftMeasuresKnown ? draftMeasures.reduce((sum, measure) => sum + (measure?.kind === 'weight' ? measure.value : 0), 0) : 0;
+  const totalVolume = allDraftMeasuresKnown ? draftMeasures.reduce((sum, measure) => sum + (measure?.kind === 'volume' ? measure.value : 0), 0) : 0;
   const draftCanSubmit = draftItems.length > 0 && draftItems.every((item) => isValidQuantity(item.amount))
     && draftItems.every((item) => item.choice.name.trim().length > 0 && item.choice.name.length <= 160)
     && draftNutritionValues.every((value) => value.ok && (futureDate || value.canLog));
@@ -519,7 +557,7 @@ export function AddChoiceDialog({ open, userId, fields, futureDate, onClose, onP
   }
   function submitDraftMeal() {
     if (!draftCanSubmit) return;
-    onPrepared(draftItems.map((item) => ({ ...item.choice, amount: Number(item.amount), unit: item.unit, section, requestId: item.choice.requestId ?? crypto.randomUUID() })));
+    onPrepared(draftItems.map((item) => ({ ...item.choice, amount: Number(item.amount), unit: item.unit, section, measure: draftMeasure(item), requestId: item.choice.requestId ?? crypto.randomUUID() })));
   }
   function resultRow(result: Selection, key: string, showLibraryBadge = true) {
     const name = result.kind === 'food' ? result.value.food.name : result.value.meal.name;
@@ -564,16 +602,29 @@ export function AddChoiceDialog({ open, userId, fields, futureDate, onClose, onP
   const foodResult = nutrition?.kind === 'food' ? nutrition.result : null;
   const mealResult = nutrition?.kind === 'meal' ? nutrition.result : null;
   const labelControl = <div className="meal-composer-label"><div className="meal-composer-label-heading"><strong>Meal label</strong></div><button className="meal-label-trigger" type="button" aria-expanded={labelOpen} aria-controls={controlId + '-label-options'} onClick={() => setLabelOpen((value) => !value)}>{section === 'unlabelled' ? '+ Add label' : labels.find(([value]) => value === section)?.[1]}</button>{labelOpen && <div id={controlId + '-label-options'} className="meal-composer-label-options" role="group" aria-label="Choose a meal label">{([['unlabelled', 'No label'], ...labels] as Array<[MealLabel, string]>).map(([value, label]) => <button key={value} type="button" aria-pressed={section === value} onClick={() => { setSection(value); setLabelOpen(false); }}>{label}</button>)}</div>}</div>;
-  return <><Dialog open={open} title={dialogTitle ?? 'Add a meal'} closeDisabled={activeWrites > 0} onClose={handleDialogClose} className={dateLabel ? 'meal-log-composer' : ''} style={composerStyle}>
+  return <><Dialog open={open} modal={!dateLabel} title={dialogTitle ?? 'Add a meal'} closeDisabled={activeWrites > 0} onClose={handleDialogClose} className={dateLabel ? 'meal-log-composer' : ''} style={composerStyle}>
     {actionMode && onActionModeChange && <div className="choice-action-picker" role="group" aria-label="Entry state"><label><input type="radio" name={controlId + '-action'} checked={actionMode === 'log'} onChange={() => onActionModeChange('log')} />Eaten</label><label><input type="radio" name={controlId + '-action'} checked={actionMode === 'plan'} onChange={() => onActionModeChange('plan')} />Planned</label></div>}
     {!selection && !catalogueSelection && !newMode && <div className="meal-composer-search-state">
       <label className="library-search choice-search"><Search size={19} aria-hidden="true" /><span className="visually-hidden">Search foods and meals</span><input autoFocus type="search" placeholder="Search foods and meals" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
       {recentError && <StatusMessage tone="error">{recentError}</StatusMessage>}
       {(foods.isError || meals.isError) && <StatusMessage tone="error">Some saved items could not be loaded. Close and try again.</StatusMessage>}
-      {allowMultiAdd && draftItems.length > 0 && <section className="choice-meal-draft" aria-label="Meal items">
-        <button type="button" className="choice-meal-draft-heading" aria-expanded={!draftItemsCollapsed} aria-controls={`${controlId}-draft-items`} onClick={() => setDraftItemsCollapsed((collapsed) => !collapsed)}><span className="choice-meal-draft-title"><strong>Meal items</strong><span>{draftItems.length}</span></span><span className="choice-meal-draft-heading-end"><span className="choice-meal-draft-calories"><strong>{draftHasKnownCalories ? number(draftCaloriesTotal) : '—'}</strong><span>kcal</span></span><ChevronDown size={17} className={draftItemsCollapsed ? '' : 'is-expanded'} aria-hidden="true" /></span></button>
-        <div id={`${controlId}-draft-items`} className="choice-meal-draft-details" hidden={draftItemsCollapsed}>
-        {draftNutrientTotals.length > 0 && <div className="choice-meal-draft-nutrients" aria-label="Meal nutrient totals">{visibleDraftNutrients.map(({ field, value, complete }) => <div key={field.field_id}><span>{field.name}</span><strong>{value === null ? '—' : number(value) + ' ' + field.unit}</strong>{!complete && value !== null && <small>partial</small>}</div>)}{draftNutrientTotals.length > 4 && <button type="button" className="text-button" onClick={() => setShowAllDraftNutrients((current) => !current)}>{showAllDraftNutrients ? 'Less' : `+${draftNutrientTotals.length - 4} more`}</button>}</div>}
+      {allowMultiAdd && (draftItems.length > 0 || dateLabel) && <DraftHost calendar={Boolean(dateLabel)} host={draftHost}>
+      {draftItems.length === 0 ? <button type="button" className="calendar-meal-draft-placeholder" onClick={onResumeSearch} aria-label="Choose food for this meal"><span>New meal</span><strong>Choose food to start</strong></button> : <section className={`choice-meal-draft${dateLabel ? ' calendar-day-meal-card-container' : ''}`} aria-label={dateLabel ? 'Draft meal' : 'Meal items'}>
+        {dateLabel ? <CalendarMealCard
+          state="Draft meal"
+          onDetailHost={setDraftDetailHost}
+          calories={draftHasKnownCalories ? number(draftCaloriesTotal) : '—'}
+          foods={draftItems.map((item, index) => ({ key: item.key, name: item.choice.name, brand: item.food?.food.brand ?? item.catalogueFood?.brand, portion: portionCountLabel(item.amount, item.unit), calories: draftNutritionValues[index]?.calories == null ? '—' : number(draftNutritionValues[index]!.calories!) }))}
+          metrics={[...draftNutrientTotals.map(({ field, value, complete }) => ({ label: field.standard_key === 'carbohydrate' ? 'Carbs' : field.name, value: complete && value !== null ? `${number(value)} ${field.unit}` : '—' })), ...(totalWeight > 0 ? [{ label: 'Weight', value: `${number(totalWeight)} g` }] : []), ...(totalVolume > 0 ? [{ label: 'Volume', value: `${number(totalVolume)} ml` }] : [])]}
+          expanded={!draftItemsCollapsed && !open}
+          compact={open}
+          onToggle={() => { if (open) { onClose(); setDraftItemsCollapsed(false); } else setDraftItemsCollapsed((collapsed) => !collapsed); }}
+        /> : <>
+          <button type="button" className="choice-meal-draft-heading" aria-expanded={!draftItemsCollapsed} aria-controls={`${controlId}-draft-items`} onClick={() => setDraftItemsCollapsed((collapsed) => !collapsed)}><span className="choice-meal-draft-title"><strong>Meal items</strong><span>{draftItems.length}</span></span><span className="choice-meal-draft-heading-end"><span className="choice-meal-draft-calories"><strong>{draftHasKnownCalories ? number(draftCaloriesTotal) : '—'}</strong><span>kcal</span></span><ChevronDown size={17} className={draftItemsCollapsed ? '' : 'is-expanded'} aria-hidden="true" /></span></button>
+          {(draftItemsCollapsed || draftItems.length > 1) && <p className="choice-meal-draft-summary" aria-label="Items in this meal">{draftItems.slice(0, 3).map((item) => <span key={item.key}>{item.choice.name}{(item.food?.food.brand ?? item.catalogueFood?.brand) ? ` · ${item.food?.food.brand ?? item.catalogueFood?.brand}` : ''} <small>({portionCountLabel(item.amount, item.unit)})</small></span>)}{draftItems.length > 3 && <span>+{draftItems.length - 3} more</span>}</p>}
+          <div className="choice-meal-draft-facts" aria-label="Meal totals">{primaryDraftNutrients.map(({ field, value, complete }) => <span key={field.field_id}>{field.standard_key === 'carbohydrate' ? 'Carbs' : field.name} <strong>{complete && value !== null ? `${number(value)} ${field.unit}` : '—'}</strong></span>)}{totalWeight > 0 && <span>Weight <strong>{number(totalWeight)} g</strong></span>}{totalVolume > 0 && <span>Volume <strong>{number(totalVolume)} ml</strong></span>}</div>
+        </>}
+        <DraftHost calendar={Boolean(dateLabel)} host={draftDetailHost}><div id={`${controlId}-draft-items`} className="choice-meal-draft-details" hidden={draftItemsCollapsed}>
         {!draftCaloriesComplete && draftCaloriesTotal > 0 && <p className="choice-meal-draft-partial">Some calorie values are missing; this is the known total.</p>}
         {draftItems.length >= 50 && <p className="field-hint">This meal has reached its item limit.</p>}
         <ol>{draftItems.map((item) => {
@@ -600,13 +651,15 @@ export function AddChoiceDialog({ open, userId, fields, futureDate, onClose, onP
         </div>
         {draftItemsCollapsed && draftItems.some((item) => !isValidQuantity(item.amount)) && <p className="field-hint">Check item amounts before logging.</p>}
         {draftItemsCollapsed && !futureDate && draftItems.some((item) => !draftNutrition(item).canLog) && <p className="field-hint">Each item needs known calories before it can be logged.</p>}
-        <div className="dialog-actions"><Button variant="secondary" type="button" onClick={() => { setDraftItems([]); setDraftItemsCollapsed(false); }}>Clear</Button><Button type="button" disabled={!draftCanSubmit} onClick={submitDraftMeal}>{futureDate ? `Add ${draftItems.length} to plan` : draftItems.length > 1 ? 'Log meal' : 'Log item'}</Button></div>
+        <div className="dialog-actions"><button className="text-button" type="button" onClick={() => { setDraftItems([]); setDraftItemsCollapsed(false); onDiscardDraft?.(); }}>{dateLabel ? 'Discard' : 'Clear'}</button>{dateLabel && !open && <button className="text-button calendar-draft-add-food" type="button" onClick={onResumeSearch}>+ Add food</button>}<Button type="button" disabled={!draftCanSubmit} onClick={submitDraftMeal}>{futureDate ? 'Plan meal' : 'Log meal'}</Button></div>
+        </DraftHost>
       </section>}
+      </DraftHost>}
       {loading && !hasSearch && <LoadingSkeleton label="Loading saved items" />}
       {!hasSearch && !loading && <>
         {(recents.data?.length ?? 0) > 0 && <><p className="eyebrow choice-list-label">RECENTLY USED</p><ul className="choice-results" aria-label="Recently used foods and meals">{recents.data!.slice(0, 6).map((choice) => <li key={choice.kind + '-' + choice.id}><button type="button" disabled={recentLoadingId === choice.id} onClick={() => void chooseRecent(choice)}><span><strong>{choice.name}</strong><small>Last used {number(choice.amount)} {choice.unit}</small></span><span className="choice-result-facts"><small>{recentLoadingId === choice.id ? 'Loading…' : 'Use again'}</small></span></button></li>)}</ul></>}
         {recentlyAdded.length > 0 && <><p className="eyebrow choice-list-label">IN YOUR LIBRARY</p><ul className="choice-results" aria-label="Saved foods and meals">{recentlyAdded.slice(0, 6).map((entry) => resultRow(entry, entry.kind + '-' + (entry.kind === 'food' ? entry.value.food.id : entry.value.meal.id), false))}</ul></>}
-        {(recents.data?.length ?? 0) === 0 && recentlyAdded.length === 0 && <p className="field-hint">Your Library is empty. Add your first food below.</p>}
+        {!dateLabel && (recents.data?.length ?? 0) === 0 && recentlyAdded.length === 0 && <p className="field-hint">Your Library is empty. Add your first food below.</p>}
       </>}
       {hasSearch && <>
         <p className="eyebrow choice-list-label">SEARCH RESULTS {searchPending ? '· SEARCHING' : ''}</p>
