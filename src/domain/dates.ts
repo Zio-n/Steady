@@ -29,10 +29,6 @@ export function startOfLocalWeek(localDate: string): string {
   return addLocalDays(localDate, -daysSinceMonday);
 }
 
-export function nextLocalWeekStart(localDate: string): string {
-  return addLocalDays(startOfLocalWeek(localDate), 7);
-}
-
 export function formatLocalDate(localDate: string, timezone: string, options: Intl.DateTimeFormatOptions) {
   // A local calendar date is already the user's date. Formatting its UTC-noon
   // anchor in an account timezone can shift it into the next/previous day.

@@ -67,7 +67,7 @@ export function LibraryPage() {
     onSuccess: async () => {
       setDeleteCandidate(null);
       setPageError('');
-      setPageNotice('Food archived from your library. Saved meals and routine references are preserved.');
+      setPageNotice('Food archived from your library. Saved meal references are preserved.');
       if (userId) await queryClient.invalidateQueries({ queryKey: queryKeys.foods(userId) });
     },
     onError: (error) => setPageError(error instanceof Error ? error.message : 'We couldn’t archive that food. Refresh and try again.'),
@@ -171,7 +171,7 @@ export function LibraryPage() {
           <EmptyState icon={<BookOpen size={24} />} title={normalizedSearch ? 'No meals match that search' : 'Your saved meals start here'}><p>{normalizedSearch ? 'Try another name, or build a meal.' : 'Combine foods into meals you can adjust and use again.'}</p></EmptyState>
         ) : <ul className="food-list" aria-label="Saved meals">{meals.data.map((entry) => <li className="food-card meal-card" key={entry.meal.id}>
           <div className="food-card-main"><div><h2>{entry.meal.name}</h2></div>
-            <p className="food-basis">{entry.components.length} {entry.components.length === 1 ? 'ingredient' : 'ingredients'}{entry.meal.declared_total_weight_g ? <span>Recipe weight {entry.meal.declared_total_weight_g} g</span> : null}</p>
+            <p className="food-basis">{entry.components.length} {entry.components.length === 1 ? 'ingredient' : 'ingredients'}</p>
             <ul className="meal-card-components">{entry.components.map((component) => <li key={component.component_id}>{component.food?.name ?? 'Unavailable food'} · {component.amount} {component.unit}</li>)}</ul>
           </div><div className="food-card-actions"><Link className="secondary-button" to={`/build?edit=${encodeURIComponent(entry.meal.id)}&from=library`}>Edit</Link></div>
         </li>)}</ul>}
@@ -184,11 +184,10 @@ export function LibraryPage() {
       </Dialog>
 
       <Dialog open={Boolean(deleteCandidate)} title={foodReferences.data?.meals.length ? 'Review food references' : 'Delete this food?'} onClose={() => setDeleteCandidate(null)}>
-        {foodReferences.isPending ? <LoadingSkeleton label="Checking saved meal and routine references" /> : foodReferences.isError ? <StatusMessage tone="error">We couldn’t check references, so the food cannot be removed yet. Retry after reconnecting.</StatusMessage> : foodReferences.data.meals.length ? (
+        {foodReferences.isPending ? <LoadingSkeleton label="Checking saved meal references" /> : foodReferences.isError ? <StatusMessage tone="error">We couldn’t check references, so the food cannot be removed yet. Retry after reconnecting.</StatusMessage> : foodReferences.data.meals.length ? (
           <div className="food-reference-preview">
-            <p>{deleteCandidate?.food.name} is used by these saved meals. Archive it from the Library to keep those meal and routine references intact.</p>
+            <p>{deleteCandidate?.food.name} is used by these saved meals. Archive it from the Library to keep those meal references intact.</p>
             <ul>{foodReferences.data.meals.map((meal) => <li key={meal.id}>{meal.name}</li>)}</ul>
-            {foodReferences.data.routineSlots.length > 0 && <><p>Scheduled routine slots also use those meals:</p><ul>{foodReferences.data.routineSlots.map((slot, index) => <li key={`${slot.effectiveFrom}-${slot.weekday}-${slot.section}-${index}`}>{['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'][slot.weekday - 1]} {slot.section} · schedule from {slot.effectiveFrom}</li>)}</ul></>}
           </div>
         ) : <p>{deleteCandidate?.food.name} will be permanently removed from your library. This cannot be undone here.</p>}
         {(deleteMutation.isError || archiveMutation.isError) && <StatusMessage tone="error">{pageError}</StatusMessage>}

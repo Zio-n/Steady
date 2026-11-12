@@ -1,11 +1,13 @@
 # Steady
 
-Steady is a calendar-first food tracker PWA. The current product brief and build plan live in Notion:
+Steady is a calendar-first food logging PWA for people pursuing weight loss who find ongoing calorie tracking too laborious. The current product direction and implementation plan live in Notion:
 
-- [Current product scope](https://app.notion.com/p/406dc7f9b1cb8122894bef1f6c77f554)
-- [Build plan](https://app.notion.com/p/403dc7f9b1cb814ca6c6ddf402d57aa9)
+- [Product direction and scope](https://app.notion.com/p/406dc7f9b1cb8122894bef1f6c77f554)
+- [Implementation plan](https://app.notion.com/p/403dc7f9b1cb814ca6c6ddf402d57aa9)
 
-The [current implementation checkpoint](docs/product-reset-and-semi-rebuild-plan.md#current-checkpoint), [food enrichment tracker](docs/food-data-enrichment-tracker.md), and agreed [food visual language](docs/food-visual-system.md) are documented here. Ingredient and recipe cost estimates are parked for possible future work.
+The [implementation plan](docs/product-reset-and-semi-rebuild-plan.md) starts with mandatory removal of obsolete recipe/Explore and routine code, followed by code, schema and documentation cleanup and a verified development-ready baseline. New logging features follow that gate. Phase 0 is complete locally: obsolete code, schema and active specifications are removed; retained flows pass automated and browser smoke checks. See the [removal and verification record](docs/phase-0-cleanup.md). Food grouping into meals remains in scope; recipes are only a possible future improvement in Notion.
+
+The [current implementation checkpoint](docs/product-reset-and-semi-rebuild-plan.md#current-checkpoint) separates retained behaviour from follow-on development. The [food enrichment tracker](docs/food-data-enrichment-tracker.md) preserves source/licence evidence; the [data contract](docs/rebuild-data-contract.md) describes foods, groups and dated entries.
 
 The visual reference is `/Users/zion/Documents/Temp_Steady/steady-site/index.html`. Its HTML/CSS has been inspected; a rendered comparison is still pending. Manrope is bundled locally so the interface does not depend on a third-party font request at runtime.
 
@@ -38,7 +40,7 @@ Private TanStack Query keys are rooted in the account ID; callers must use these
 
 The app shows a connectivity notice when the browser reports offline. A cold offline read settles into an error/retry state instead of waiting indefinitely; data still visible from an earlier load is labeled as potentially stale. When the browser reports a restored connection, active account data is refreshed; a failed refresh has a manual retry. A known-offline mutation fails before its request and is never replayed automatically. An uncertain write must be reconciled through its feature's refresh/same-request retry path. Drafts remain in component memory while the tab stays open, not in the service-worker cache. Local sign-out clears this device's session and private query cache even when the remote logout cannot be confirmed; it does not revoke sessions on other devices.
 
-A new app version prompts for a user-approved reload. To avoid discarding edits, any input/change in the current tab conservatively defers that in-app update until the tab is closed and reopened, even if the edit was later saved. In-flight mutations also block the update. This is intentionally conservative until every form has a reliable clean-state signal. See [PWA operations and acceptance](docs/pwa-operations.md) for the deployment compatibility rules, behavior matrix, and the real-device checks that remain in Phase 10.
+A new app version prompts for a user-approved reload. To avoid discarding edits, any input/change in the current tab conservatively defers that in-app update until the tab is closed and reopened, even if the edit was later saved. In-flight mutations also block the update. This is intentionally conservative until every form has a reliable clean-state signal. See [PWA operations and acceptance](docs/pwa-operations.md) for the deployment compatibility rules, behavior matrix, and the remaining real-device release checks.
 
 ## Verification
 
@@ -48,5 +50,4 @@ A new app version prompts for a user-approved reload. To avoid discarding edits,
 - `npm run test:a11y` checks contrast for core text color pairs.
 - `npm run test:pwa` checks the generated cache policy after a build.
 - `npm run db:test -- --network-id steady-loopback` runs local pgTAP checks while that custom network is in use.
-- `npm run test:carry-concurrency` checks competing carry writes using a synthetic local account and removes it afterward.
 - `npm run build` runs type checking and creates the production PWA bundle.

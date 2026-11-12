@@ -12,7 +12,7 @@ grant all on logging_ids to authenticated;
 select set_config('request.jwt.claim.sub','81111111-1111-4111-8111-111111111111',true);
 set local role authenticated;
 
-select public.complete_profile_onboarding('81111111-1111-4111-8111-811111111111','Europe/London',2100,'["protein"]'::jsonb,'{"protein":125}'::jsonb);
+select public.complete_calendar_setup('81111111-1111-4111-8111-811111111111','Europe/London',2100);
 insert into pg_temp.logging_ids(label,id)
   select 'food',(public.save_food('81111111-1111-4111-8111-811111111112',null,null,'Oats',null,100,'g',null,40,'g',380,'{"protein":13.2}'::jsonb)->>'id')::uuid;
 insert into pg_temp.logging_ids(label,id)
@@ -27,7 +27,7 @@ insert into pg_temp.logging_ids(label,id)
     ))->>'id')::uuid;
 
 select extensions.is(
-  (public.log_day_item('81111111-1111-4111-8111-811111111121',(now() at time zone 'Europe/London')::date,'breakfast','food',(select id from pg_temp.logging_ids where label='food'),50,'g')->>'calories_kcal')::numeric,
+  (public.calendar_log_day_item('81111111-1111-4111-8111-811111111121',(now() at time zone 'Europe/London')::date,'breakfast','food',(select id from pg_temp.logging_ids where label='food'),50,'g')->>'calories_kcal')::numeric,
   190::numeric,'food log scales calories against its saved basis'
 );
 select extensions.is(
@@ -39,24 +39,24 @@ select extensions.is(
   2,'first log creates a dated day and advances its log revision'
 );
 select extensions.is(
-  public.log_day_item('81111111-1111-4111-8111-811111111121',(now() at time zone 'Europe/London')::date,'breakfast','food',(select id from pg_temp.logging_ids where label='food'),50,'g')->>'eaten_count',
+  public.calendar_log_day_item('81111111-1111-4111-8111-811111111121',(now() at time zone 'Europe/London')::date,'breakfast','food',(select id from pg_temp.logging_ids where label='food'),50,'g')->>'eaten_count',
   '1','same request retry returns the original result without duplicating intake'
 );
 select extensions.throws_ok(
-  $$select public.log_day_item('81111111-1111-4111-8111-811111111121',(now() at time zone 'Europe/London')::date,'breakfast','food',(select id from pg_temp.logging_ids where label='food'),60,'g')$$,
+  $$select public.calendar_log_day_item('81111111-1111-4111-8111-811111111121',(now() at time zone 'Europe/London')::date,'breakfast','food',(select id from pg_temp.logging_ids where label='food'),60,'g')$$,
   '22023',null,'same request id cannot be reused with a different portion'
 );
 select extensions.is(
-  (public.log_day_item('81111111-1111-4111-8111-811111111122',(now() at time zone 'Europe/London')::date,'lunch','meal',(select id from pg_temp.logging_ids where label='meal'),2,'serving')->>'calories_kcal')::numeric,
+  (public.calendar_log_day_item('81111111-1111-4111-8111-811111111122',(now() at time zone 'Europe/London')::date,'lunch','meal',(select id from pg_temp.logging_ids where label='meal'),2,'serving')->>'calories_kcal')::numeric,
   690::numeric,'saved multi-food meal scales each component by the requested serving count'
 );
 select extensions.is(
-  (public.log_day_item('81111111-1111-4111-8111-811111111123',(now() at time zone 'Europe/London')::date,'snack','one_off_food',null,50,'g',
+  (public.calendar_log_day_item('81111111-1111-4111-8111-811111111123',(now() at time zone 'Europe/London')::date,'snack','one_off_food',null,50,'g',
     '{"name":"Banana","basisAmount":100,"basisUnit":"g","caloriesKcal":89,"nutrients":{"protein":1.1}}'::jsonb)->>'calories_kcal')::numeric,
   734.5::numeric,'one-off food contributes a scaled nutrition snapshot without becoming a library record'
 );
 select extensions.is(
-  (public.log_day_item('81111111-1111-4111-8111-811111111124',(now() at time zone 'Europe/London')::date,'dinner','one_off_meal',null,1,'serving',
+  (public.calendar_log_day_item('81111111-1111-4111-8111-811111111124',(now() at time zone 'Europe/London')::date,'dinner','one_off_meal',null,1,'serving',
     jsonb_build_object('name','Quick bowl','components',jsonb_build_array(
       jsonb_build_object('food_id',(select id from pg_temp.logging_ids where label='food'),'amount',50,'unit','g'),
       jsonb_build_object('food_id',(select id from pg_temp.logging_ids where label='other_food'),'amount',100,'unit','ml')
@@ -73,15 +73,15 @@ insert into public.day_items(id,user_id,local_date,section,state,source,selected
   );
 set local role authenticated;
 select extensions.is(
-  (public.log_day_item('81111111-1111-4111-8111-811111111132',(now() at time zone 'Europe/London')::date,'snack','food',(select id from pg_temp.logging_ids where label='food'),25,'g',null,'81111111-1111-4111-8111-811111111131',1)->>'calories_kcal')::numeric,
+  (public.calendar_log_day_item('81111111-1111-4111-8111-811111111132',(now() at time zone 'Europe/London')::date,'snack','food',(select id from pg_temp.logging_ids where label='food'),25,'g',null,'81111111-1111-4111-8111-811111111131',1)->>'calories_kcal')::numeric,
   1079.5::numeric,'a revision-matched planned item transitions to eaten and contributes once'
 );
 select extensions.is(
-  public.log_day_item('81111111-1111-4111-8111-811111111132',(now() at time zone 'Europe/London')::date,'snack','food',(select id from pg_temp.logging_ids where label='food'),25,'g',null,'81111111-1111-4111-8111-811111111131',1)->>'eaten_count',
+  public.calendar_log_day_item('81111111-1111-4111-8111-811111111132',(now() at time zone 'Europe/London')::date,'snack','food',(select id from pg_temp.logging_ids where label='food'),25,'g',null,'81111111-1111-4111-8111-811111111131',1)->>'eaten_count',
   '5','retrying the accepted planned transition returns its original receipt'
 );
 select extensions.throws_ok(
-  $$select public.log_day_item('81111111-1111-4111-8111-811111111133',(now() at time zone 'Europe/London')::date,'snack','food',(select id from pg_temp.logging_ids where label='food'),25,'g',null,'81111111-1111-4111-8111-811111111131',1)$$,
+  $$select public.calendar_log_day_item('81111111-1111-4111-8111-811111111133',(now() at time zone 'Europe/London')::date,'snack','food',(select id from pg_temp.logging_ids where label='food'),25,'g',null,'81111111-1111-4111-8111-811111111131',1)$$,
   '40001',null,'a second request cannot eat the same planned item again'
 );
 select extensions.is(
@@ -149,15 +149,15 @@ select public.save_meal('81111111-1111-4111-8111-811111111152','Oats and milk re
   (select id from pg_temp.logging_ids where label='meal'),1);
 select extensions.is(
   (select count(*) from public.meal_components as component where component.user_id=auth.uid() and component.meal_id=(select id from pg_temp.logging_ids where label='meal')),
-  1::bigint,'the current recipe has been edited to a single component'
+  1::bigint,'the current meal has been edited to a single component'
 );
 select extensions.is(
   jsonb_array_length((select item.eaten_snapshot->'components' from public.day_items as item where item.user_id=auth.uid() and item.eaten_snapshot->>'source'='meal')),
-  2,'the earlier eaten meal retains its original two-component snapshot after recipe edit'
+  2,'the earlier eaten meal retains its original two-component snapshot after meal edit'
 );
 select extensions.is(
-  (public.log_day_item('81111111-1111-4111-8111-811111111122',(now() at time zone 'Europe/London')::date,'lunch','meal',(select id from pg_temp.logging_ids where label='meal'),2,'serving')->>'calories_kcal')::numeric,
-  690::numeric,'an uncertain retry after recipe edits returns the original receipt and original day total'
+  (public.calendar_log_day_item('81111111-1111-4111-8111-811111111122',(now() at time zone 'Europe/London')::date,'lunch','meal',(select id from pg_temp.logging_ids where label='meal'),2,'serving')->>'calories_kcal')::numeric,
+  690::numeric,'an uncertain retry after meal edits returns the original receipt and original day total'
 );
 select public.archive_food('81111111-1111-4111-8111-811111111153',(select id from pg_temp.logging_ids where label='food'),2);
 select extensions.is(
@@ -165,11 +165,11 @@ select extensions.is(
   380::numeric,'archiving a source food leaves its earlier eaten nutrition snapshot unchanged'
 );
 select extensions.throws_ok(
-  $$select public.log_day_item('81111111-1111-4111-8111-811111111125',(now() at time zone 'Europe/London')::date,'snack','food',(select id from pg_temp.logging_ids where label='unknown_food'),100,'g')$$,
+  $$select public.calendar_log_day_item('81111111-1111-4111-8111-811111111125',(now() at time zone 'Europe/London')::date,'snack','food',(select id from pg_temp.logging_ids where label='unknown_food'),100,'g')$$,
   '22023',null,'unknown-calorie foods cannot be logged'
 );
 select extensions.throws_ok(
-  $$select public.log_day_item('81111111-1111-4111-8111-811111111126',((now() at time zone 'Europe/London')::date+1),'snack','food',(select id from pg_temp.logging_ids where label='food'),10,'g')$$,
+  $$select public.calendar_log_day_item('81111111-1111-4111-8111-811111111126',((now() at time zone 'Europe/London')::date+1),'snack','food',(select id from pg_temp.logging_ids where label='food'),10,'g')$$,
   '22023',null,'future dates are reserved for the planning flow'
 );
 

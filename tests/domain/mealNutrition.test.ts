@@ -32,7 +32,7 @@ test('all unknown values stay unknown; an incomplete calorie total cannot be log
 });
 
 test('empty, incompatible, unavailable and invalid components are rejected', () => {
-  assert.deepEqual(calculateMealNutrition([], []), { ok: false, error: 'empty_recipe' });
+  assert.deepEqual(calculateMealNutrition([], []), { ok: false, error: 'empty_meal' });
   assert.deepEqual(calculateMealNutrition([{ foodId: '', food: null, amount: 1, unit: 'g' }], []), { ok: false, error: 'component_missing', componentIndex: 0 });
   assert.deepEqual(calculateMealNutrition([{ foodId: 'missing', food: null, amount: 1, unit: 'g' }], []), { ok: false, error: 'food_unavailable', componentIndex: 0 });
   assert.deepEqual(calculateMealNutrition([{ foodId: 'oats', food: oats, amount: 1, unit: 'ml' }], []), { ok: false, error: 'incompatible_unit', componentIndex: 0 });

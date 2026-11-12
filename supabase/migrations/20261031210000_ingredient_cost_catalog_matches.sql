@@ -1,3 +1,4 @@
+-- Optional catalogue seeds: a fresh install may not have imported these foods.
 -- Reviewed links from generic catalogue foods to separate Steady-owned cost
 -- estimates. These links add no cost or nutrient values to imported records.
 create table public.ingredient_cost_catalog_matches (
@@ -28,7 +29,7 @@ comment on column public.ingredient_cost_catalog_matches.match_quality is
 
 insert into public.ingredient_cost_catalog_matches
   (source_id, source_record_id, ingredient_key, match_quality, match_rationale)
-values
+select candidate.* from (values
   ('usda_foundation','2646170','chicken_fillet','direct','Raw boneless, skinless chicken breast matches the ONS chicken fillet/steak price category.'),
   ('cofid_2021','12-313','milk_semi_skimmed','direct','CoFID average semi-skimmed pasteurised milk matches the priced fresh semi-skimmed milk category.'),
   ('usda_fndds','2705385','milk_whole','direct','Generic whole cow milk matches the priced fresh whole milk category.'),
@@ -46,6 +47,11 @@ values
   ('cofid_2021','13-530','canned_tomatoes','direct','Canned whole tomatoes match the priced canned or jarred tomatoes category.'),
   ('usda_fndds','2707598','bread_white','approximate','Generic white bread matches the broad sliced white bread category; loaf format may differ.'),
   ('cofid_2021','14-319','apples','approximate','Raw eating apples match the ONS non-cooking apple category; variety and edible-weight basis may differ.')
+) as candidate(source_id, source_record_id, ingredient_key, match_quality, match_rationale)
+where exists (
+  select 1 from public.catalog_foods f
+  where f.source_id = candidate.source_id and f.source_record_id = candidate.source_record_id
+)
 on conflict (source_id, source_record_id) do update set
   ingredient_key = excluded.ingredient_key,
   match_quality = excluded.match_quality,

@@ -11,7 +11,7 @@ import { Button } from '../../ui/components/Button';
 import { Field, NumericField } from '../../ui/components/Field';
 import { UnitPicker } from '../../ui/components/UnitPicker';
 import { StatusMessage } from '../../ui/components/StatusMessage';
-import type { PreparedChoice } from './AddChoiceDialog';
+import type { PreparedChoice } from './composerFoods';
 
 export function OneOffFoodForm({ userId, fields, futureDate, section, onPrepared, onSavedOnly, onDirtyChange, onAddIngredients, extraFields, purpose = 'day' }: {
   userId: string;

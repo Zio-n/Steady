@@ -1,7 +1,8 @@
+-- Optional catalogue seeds: a fresh install may not have imported these foods.
 -- Expand the reviewed crosswalk with specific, source-backed generic food forms.
 insert into public.ingredient_cost_catalog_matches
   (source_id, source_record_id, ingredient_key, match_quality, match_rationale)
-values
+select candidate.* from (values
   ('cofid_2021','13-532','baked_beans','direct','Canned baked beans in tomato sauce match the ONS baked beans item.'),
   ('cofid_2021','11-981','bread_wholemeal','direct','CoFID wholemeal bread matches the ONS sliced wholemeal or brown bread item.'),
   ('cofid_2021','19-497','bacon','direct','Raw back bacon rashers match the ONS bacon item; the broad item also includes other bacon forms.'),
@@ -26,6 +27,11 @@ values
   ('cofid_2021','19-128','canned_meat','approximate','Canned corned beef is a common canned meat form represented by the ONS canned meat item.'),
   ('cofid_2021','11-989','crumpets','approximate','Toasted crumpets match the ONS per-crumpet item; toasting changes weight but not purchase count.'),
   ('usda_fndds','2705730','parmesan','direct','Hard Parmesan matches the ONS Parmesan and similar cheese category.')
+) as candidate(source_id, source_record_id, ingredient_key, match_quality, match_rationale)
+where exists (
+  select 1 from public.catalog_foods f
+  where f.source_id = candidate.source_id and f.source_record_id = candidate.source_record_id
+)
 on conflict (source_id, source_record_id) do update set
   ingredient_key = excluded.ingredient_key,
   match_quality = excluded.match_quality,

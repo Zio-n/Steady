@@ -1,8 +1,10 @@
 # Food data enrichment tracker (temporary)
 
-**Purpose:** Track enrichment of Steady's food catalogue and recipe attributes before implementation/publication. This is an internal progress document; do not put food rows, user data, or full source extracts in this file or the application repository.
+**Purpose:** Track enrichment of Steady's food catalogue for search, portions and private corrections. This is an internal progress document; do not put food rows, user data, or full source extracts in this file or the application repository.
 
 **Current scope:** Local development catalogue and project docs only. The last recorded import is local; no hosted database or public food-data export is part of this work.
+
+Import/enrichment counts below are previously recorded local evidence, not remeasured by Phase 0 cleanup.
 
 ## Source import baseline
 
@@ -24,14 +26,12 @@
 | E3 | Verified portions and conversions | **Partial; local factor enrichment and coverage audit done** | Applied 2,852 distinct CoFID food-factor records locally and verified all joins; found 54 specific-gravity records and no invalid factors. Portion coverage: OFF 642,332 foods / 642,333 gram portions; FNDDS 5,395 / 22,045; Foundation Foods 291 / 298; SR Legacy 7,533 / 14,430; CoFID 0 portions. No imported portion is marked default. Next expose sourced measures clearly and add household portions only when a source provides them. | Never infer grams from volume without a credible food-specific conversion. Do not turn edible proportion into a serving size or choose an arbitrary default portion. |
 | E4 | Generic food forms and variants | **Partial; priority family audit done, SR Legacy added** | Reviewed source-attributed records and raw/cooked/preserved/fat/skin terms for oats, rice, potatoes, chicken, beef, milk, eggs, legumes, pasta, and tomatoes. CoFID, FNDDS, Foundation Foods, and SR Legacy provide distinct source-backed forms across these families. Added USDA SR Legacy April 2018: 7,793 records with energy and protein; 7,533 also have sourced portions. Generic top-match ranking still needs review for wrong preparation/form. | Keep materially different food forms as separate source records. Do not infer missing variants or combine values across different source records. |
 | E5 | Allergen coverage and completeness | **Partial; source fields separated locally** | Audited all 909,447 imported Open Food Facts rows. 215,430 have `allergens_tags` (source-listed allergen tags); 14,471 have separate `traces_tags`; 217,939 retain non-empty ingredient/user evidence fields. Added `allergen_traces` and refreshed 909,445 matched products locally; 2 legacy rows absent from the archive were left untouched. CoFID/FNDDS/Foundation have no imported allergen values. No source field proves a product is allergen-free; null/empty remains unknown. | Keep contains tags, possible-trace tags, and evidence source fields distinct. Never infer allergen-free status from missing data or use AI for allergen claims. |
-| E6 | Ingredient cost estimates | **Shelved; future improvement** | Local research is archived in the private `steady_research` schema: 179 dated UK ONS estimates and 55 reviewed generic-food links across 53 cost keys. App roles have no schema access. The 8-recipe sample checked link existence only; 12 links need verified unit conversions for gram-based recipes. No cost UI, matching expansion, currency conversion, or cost-specific recipe fields are in the current build. See the [research checkpoint](ingredient-cost-coverage-review.md) if this is revisited. | Keep source and licence attribution with the dormant local research. Do not treat missing cost as zero or infer incompatible units. |
-| E7 | Recipe attribute suggestions | Not started | For recipe text only, let a lightweight decision model suggest prep/cook/wait times, equipment, and cleanup effort with supporting text/confidence; author can edit; cache by recipe revision | Recipe/user data stays outside the shared imported food catalogue; no invented instructions, allergens, or food-safety claims. |
 | E8 | Publication and export review | Not started | Before any public catalogue API, dump, or feature exposing substantial OFF-derived data, complete an ODbL compliance review and implement required attribution/access terms; recheck other sources' attribution | Do not treat “separate tables” alone as proof that an app's public use has no ODbL obligations. |
 
 ## Licence safeguards
 
 - Keep each imported source identifiable at row and nutrient-value level; never remove source IDs or licence provenance during normalization.
-- Keep Steady-owned cost estimates, user-private corrections, AI suggestions, and authored recipe content in separate tables/scopes with explicit ownership and visibility. Do not merge them into an OFF-derived export.
+- Keep user-private corrections separate with explicit ownership and source lineage. Do not merge them into an OFF-derived export.
 - This separation supports provenance and limits accidental licensing spillover; it does **not** by itself settle the legal treatment of a public service that uses OFF-derived data.
 - ODbL 1.0 permits commercial use subject to its conditions. Section 4.6 can require a machine-readable copy of a derivative database or an alterations file when publicly using a derivative database or a produced work from it. Resolve applicability and compliance before launch/public data release.
 - OGL source material requires attribution under its terms. USDA FoodData Central states its data are CC0 and requests source credit.
@@ -40,7 +40,7 @@
 
 ## Status definitions
 
-**Not started** = no enrichment action yet. **In progress** = active audit or implementation. **Partial** = source provides some records/fields but coverage is incomplete. **Done** = checked against a defined coverage/quality measure and recorded. **Shelved** = preserved research with no current build work. **Imported** means source rows exist locally; it does not mean enrichment or quality review is complete.
+**Not started** = no enrichment action yet. **In progress** = active audit or implementation. **Partial** = source provides some records/fields but coverage is incomplete. **Done** = checked against a defined coverage/quality measure and recorded. **Imported** means source rows exist locally; it does not mean enrichment or quality review is complete.
 
 ## Current blocker
 
@@ -54,7 +54,5 @@ There is no active blocker for local E1-E3 enrichment. CoFID factors have been a
 - [USDA FoodData Central licence](https://fdc.nal.usda.gov/api-guide/)
 - [Open Food Facts Product Ingredients schema](https://openfoodfacts.github.io/documentation/docs/Product-Opener/schemas/schemas/product_ingredients/) (separate allergen and traces fields)
 - [UK Government allergen ingredient-list guidance](https://www.gov.uk/food-labelling-and-packaging/ingredients-list)
-- [ONS Shopping prices comparison tool](https://www.ons.gov.uk/visualisations/dvc2523/shopping-prices-comparison-tool/index.html) (September 2026 average prices; OGL v3.0)
-- [Ingredient cost coverage review](ingredient-cost-coverage-review.md) (179-item local baseline, reviewed generic links, and limited recipe benchmark)
 - [Current catalogue quality review](food-catalogue-import-progress.md)
-- [Meal builder attributes and implementation plan](meal-builder-attributes.md)
+- [Food grouping and meal logging](meal-builder-attributes.md)

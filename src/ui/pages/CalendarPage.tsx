@@ -1,17 +1,19 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useOutletContext, useSearchParams } from 'react-router-dom';
 import { Calendar, CalendarDays, CalendarRange, Check, ChevronDown, ChevronLeft, ChevronRight, NotebookPen, Plus, Settings } from 'lucide-react';
 import { useAuth } from '../../app/AuthProvider';
 import { useProfile } from '../../features/profile/useProfile';
-import { AddChoiceDialog, type PreparedChoice } from '../../features/today/AddChoiceDialog';
+import { AddChoiceDialog, SeriesScopeSelect } from '../../features/today/AddChoiceDialog';
+import { existingBlockDraft, plannedDraft, prepareFood, type PreparedChoice } from '../../features/today/composerFoods';
 import { queryKeys } from '../../data/queryKeys';
 import { rememberAddedFoodPortions } from '../../data/repositories/foodPortionPreferenceRepository';
 import { editCalendarFoodSnapshot, removePlannedDayItem, resizePlannedDayItem, restorePlannedCalendarItem, reviseDayItem, type EditCalendarFoodSnapshotInput, type ReviseDayItemInput } from '../../data/repositories/dayRepository';
-import { logCalendarItem, logCalendarItems, planCalendarItems, readCalendarDay, readCalendarRange, type CalendarChoice, type CalendarDay } from '../../data/repositories/calendarRepository';
+import { logCalendarItem, logCalendarItems, planCalendarItems, readCalendarDay, readCalendarRange, saveCalendarComposer, type CalendarChoice, type CalendarDay, type ComposerSave, type SeriesScope } from '../../data/repositories/calendarRepository';
 import { addLocalDays, addLocalMonths, formatLocalDate, isValidLocalDate, localDateInTimezone, startOfLocalWeek } from '../../domain/dates';
-import { plannedItemName, readEatenSnapshot, readPlannedChoice, readPlannedMeasure, summarizeDay, type DayItem } from '../../domain/daySummary';
+import { plannedItemName, readEatenSnapshot, readPlannedChoice, readPlannedMeasure, readPlannedNutrition, readItemLogging, summarizeDay, type DayItem } from '../../domain/daySummary';
+import { CALORIES } from '../../domain/mealComposer';
 import { isValidQuantity, QUANTITY_MAX, QUANTITY_MIN, QUANTITY_STEP } from '../../domain/numericLimits';
 import { Dialog } from '../components/Dialog';
 import { CalendarMealCard } from '../components/CalendarMealCard';
@@ -22,7 +24,10 @@ import { StatusMessage } from '../components/StatusMessage';
 const sections = [
   ['breakfast', 'Breakfast'], ['lunch', 'Lunch'], ['dinner', 'Dinner'], ['snack', 'Snacks'],
 ] as const;
-const number = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+const number = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+function nutritionText(value: number | null, unit = '', estimated = false, partial = false) {
+  return value === null ? '—' : `${estimated ? '≈' : ''}${number(value)}${unit ? ` ${unit}` : ''}${partial ? ' · partial' : ''}`;
+}
 const validDate = (value: string | null) => value !== null && isValidLocalDate(value);
 function groupDayItems(items: DayItem[]) {
   const groups: Array<{ id: string; grouped: boolean; items: DayItem[] }> = [];
@@ -32,6 +37,10 @@ function groupDayItems(items: DayItem[]) {
     const position = positions.get(id);
     if (position === undefined) { positions.set(id, groups.length); groups.push({ id, grouped: Boolean(item.meal_group_id), items: [item] }); }
     else groups[position]!.items.push(item);
+  }
+  for (const group of groups) {
+    group.items.sort((left, right) => (readItemLogging(left)?.position ?? Number.MAX_SAFE_INTEGER)
+      - (readItemLogging(right)?.position ?? Number.MAX_SAFE_INTEGER));
   }
   return groups;
 }
@@ -56,7 +65,7 @@ function CalendarMealIngredientEditor({ item, snapshot, component, componentInde
   const [nutrients, setNutrients] = useState<Record<string, string>>(() => Object.fromEntries(fields.map((field) => [field.field_id, basisNutrients[field.field_id]?.value == null ? '' : String(basisNutrients[field.field_id]!.value)])));
   const componentCount = snapshot.components?.length ?? 0;
   const kcalValue = Number(calories);
-  const valid = name.trim().length > 0 && name.length <= 160 && Number.isFinite(kcalValue) && kcalValue >= 0 && kcalValue < 100_000_000
+  const valid = name.trim().length > 0 && name.length <= 160 && calories.trim() !== '' && Number.isFinite(kcalValue) && kcalValue >= 0 && kcalValue < 100_000_000
     && Object.values(nutrients).every((value) => value === '' || Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) < 100_000_000);
   const portion = `${number(Number(component.amount ?? snapshot.selected_amount))} ${String(component.unit ?? snapshot.selected_unit)}`;
   const calorieMetric = component.calories && typeof component.calories === 'object' ? component.calories as { value?: number | null } : {};
@@ -117,13 +126,21 @@ export function CalendarPage() {
   const monthLast = addLocalDays(addLocalMonths(monthFirst, 1), -1);
   const rangeFrom = view === 'week' ? startOfLocalWeek(localDate) : startOfLocalWeek(monthFirst);
   const rangeTo = view === 'week' ? addLocalDays(rangeFrom, 6) : addLocalDays(startOfLocalWeek(monthLast), 6);
-  const [adding, setAdding] = useState<'log' | 'plan' | null>(() => searchParams.get('start') === 'meal' ? 'log' : null);
-  const [searchOpen, setSearchOpen] = useState(() => searchParams.get('start') === 'meal');
-  const [draftCount, setDraftCount] = useState(0);
-  const [draftHost, setDraftHost] = useState<HTMLElement | null>(null);
-  const [composerAnchor, setComposerAnchor] = useState<{ left: number; top: number; width: number } | null>(null);
+  const [composerDraft, setComposer] = useState<{
+    anchorTile: HTMLButtonElement | null; block?: DayItem; plannedItems?: DayItem[]; startEaten?: boolean; attachFoods?: boolean;
+  } | null>(null);
+  const composer = composerDraft ?? (searchParams.get('start') === 'meal' ? { anchorTile: null } : null);
+  const composerTrigger = useRef<HTMLButtonElement | null>(null);
+  const [draftTile, setDraftTile] = useState<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (draftTile && window.matchMedia('(min-width: 761px)').matches) {
+      draftTile.scrollIntoView({ block: 'nearest' });
+    }
+  }, [draftTile]);
   const [pendingChoice, setPendingChoice] = useState<{ action: 'log' | 'plan'; input: CalendarChoice | CalendarChoice[] } | null>(null);
   const [editingItem, setEditingItem] = useState<DayItem | null>(null);
+  const [removingSeries, setRemovingSeries] = useState<DayItem | null>(null);
+  const [seriesScope, setSeriesScope] = useState<SeriesScope>('one');
   const [editAmount, setEditAmount] = useState('');
   const [restoreItems, setRestoreItems] = useState<{ items: Array<{ item: DayItem; kind: 'eaten' | 'planned' }>; localDate: string; message: string } | null>(null);
   const [notice, setNotice] = useState('');
@@ -136,14 +153,8 @@ export function CalendarPage() {
   const viewTriggerRef = useRef<HTMLButtonElement>(null);
   const swipeStart = useRef<{ x: number; y: number } | null>(null);
 
-  useEffect(() => {
-    if (searchParams.get('start') !== 'meal') return;
-    setSearchParams({}, { replace: true });
-  }, [searchParams, setSearchParams]);
-
   function chooseDate(date: string) {
-    setAdding(null);
-    setSearchOpen(false);
+    setComposer(null);
     setMonthPickerOpen(false);
     setPendingChoice(null);
     setNotice('');
@@ -151,12 +162,12 @@ export function CalendarPage() {
   }
 
   function chooseView(nextView: CalendarView) {
-    setAdding(null); setSearchOpen(false); setMonthPickerOpen(false); setViewMenuOpen(false); setNotice('');
+    setComposer(null); setMonthPickerOpen(false); setViewMenuOpen(false); setNotice('');
     setSearchParams({ ...(localDate === today ? {} : { date: localDate }), ...(nextView === 'day' ? {} : { view: nextView }) });
   }
 
   function selectDay(date: string) {
-    setAdding(null); setSearchOpen(false); setMonthPickerOpen(false); setNotice('');
+    setComposer(null); setMonthPickerOpen(false); setNotice('');
     setSearchParams({ ...(date === today ? {} : { date }) });
   }
 
@@ -165,12 +176,25 @@ export function CalendarPage() {
   }
 
   function openAdd(event: MouseEvent<HTMLButtonElement>) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    setComposerAnchor({ left: window.innerWidth > 900 ? Math.max(16, window.innerWidth - 480) : 14,
-      top: window.innerWidth > 900 ? Math.max(175, Math.min(rect.top, window.innerHeight - 440)) : rect.bottom + 14,
-      width: window.innerWidth > 900 ? 440 : window.innerWidth - 28 });
-    setAdding(localDate > today ? 'plan' : 'log');
-    setSearchOpen(true);
+    composerTrigger.current = event.currentTarget;
+    setExpandedGroupId(null);
+    setComposer({ anchorTile: null });
+  }
+
+  function closeComposer() {
+    setComposer(null);
+    if (searchParams.has('start')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('start');
+      setSearchParams(next, { replace: true });
+    }
+    requestAnimationFrame(() => composerTrigger.current?.focus({ preventScroll: true }));
+  }
+
+  function editOccurrence(items: DayItem[], anchorTile: HTMLButtonElement, block?: DayItem, attachFoods = false, startEaten = false) {
+    composerTrigger.current = anchorTile;
+    setExpandedGroupId(null);
+    setComposer({ anchorTile, block, plannedItems: items.every((item) => item.state === 'planned') ? items : undefined, attachFoods, startEaten });
   }
 
   const dayQuery = useQuery({
@@ -214,10 +238,10 @@ export function CalendarPage() {
       document.removeEventListener('keydown', closeOnEscape);
     };
   }, [viewMenuOpen]);
-  const refresh = async (date: string) => {
+  const refresh = async (date: string, allDates = false) => {
     if (!userId) return;
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.day(userId, date) }),
+      queryClient.invalidateQueries({ queryKey: allDates ? ['account', userId, 'day'] : queryKeys.day(userId, date) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.recentChoices(userId) }),
       queryClient.invalidateQueries({ queryKey: ['account', userId, 'calendar-range'] }),
     ]);
@@ -284,6 +308,15 @@ export function CalendarPage() {
       setNotice(Array.isArray(input) ? `Logged ${input.length} items for this date.` : 'Meal logged for this date.');
     },
   });
+  const seriesMutation = useMutation({
+    mutationFn: saveCalendarComposer,
+    onSuccess: async (_result, input) => {
+      setRemovingSeries(null);
+      setExpandedGroupId(null);
+      await refresh(input.localDate, true);
+      setNotice(input.state === 'removed' ? 'Repeating plan updated.' : 'Meal logged.');
+    },
+  });
 
   function submit(choice: PreparedChoice | PreparedChoice[], action: 'log' | 'plan', requestId = crypto.randomUUID()) {
     const choices = Array.isArray(choice) ? choice : [choice];
@@ -303,7 +336,26 @@ export function CalendarPage() {
     else logMutation.mutate(input);
   }
 
-  function markMealEaten(items: DayItem[]) {
+  function markMealEaten(items: DayItem[], anchor: HTMLButtonElement) {
+    const occurrence = items[0];
+    if (occurrence?.series_id && occurrence.series_revision) {
+      const drafts = items.map(plannedDraft);
+      if (drafts.some((food) => !food || food.basis.caloriesKcal === null)) {
+        editOccurrence(items, anchor, undefined, false, true);
+        return;
+      }
+      seriesMutation.mutate({
+        requestId: crypto.randomUUID(), localDate, state: 'eaten',
+        items: drafts.map((food) => prepareFood(food!, profile.data?.nutrientFields ?? [], occurrence.section)),
+        seriesEdit: { id: occurrence.series_id, revision: occurrence.series_revision, scope: 'one' },
+      });
+      return;
+    }
+    if (items.every((item) => item.state === 'planned' && readItemLogging(item)) &&
+      items.some((item) => readPlannedNutrition(item)?.calories == null)) {
+      editOccurrence(items, anchor, undefined, false, true);
+      return;
+    }
     const choices = items.filter((item) => item.state === 'planned').flatMap((item): PreparedChoice[] => {
       const planned = readPlannedChoice(item.planned_payload);
       if (!planned) return [];
@@ -327,6 +379,14 @@ export function CalendarPage() {
     setMealActionBusy(true);
     try {
       const isPlanned = items.every((item) => item.state === 'planned');
+      const composerFoods = items.map((item) => readItemLogging(item) ? existingBlockDraft(item) : null);
+      if (composerFoods.every((food) => food !== null)) {
+        await saveCalendarComposer({ requestId: crypto.randomUUID(), localDate, state: isPlanned ? 'planned' : 'eaten',
+          items: composerFoods.map((food, index) => prepareFood(food!, profile.data?.nutrientFields ?? [], items[index]!.section)) });
+        await refresh(localDate);
+        setNotice(isPlanned ? 'Meal duplicated as a plan.' : 'Meal duplicated.');
+        return;
+      }
       const choices: CalendarChoice[] = items.flatMap((item): CalendarChoice[] => {
         const planned = item.state === 'planned' ? readPlannedChoice(item.planned_payload) : null;
         const snapshot = item.state === 'eaten' ? readEatenSnapshot(item.eaten_snapshot) : null;
@@ -401,7 +461,7 @@ export function CalendarPage() {
   const remaining = target !== null && calories.value !== null ? target - calories.value : null;
   const isToday = localDate === today;
   const [mealActionBusy, setMealActionBusy] = useState(false);
-  const busy = planMutation.isPending || logMutation.isPending || reviseMutation.isPending || resizePlanMutation.isPending || removePlanMutation.isPending || restorePlanMutation.isPending || editFoodSnapshotMutation.isPending || mealActionBusy;
+  const busy = planMutation.isPending || logMutation.isPending || seriesMutation.isPending || reviseMutation.isPending || resizePlanMutation.isPending || removePlanMutation.isPending || restorePlanMutation.isPending || editFoodSnapshotMutation.isPending || mealActionBusy;
   const rangeTitle = view === 'month'
     ? formatLocalDate(localDate, timezone, { month: 'long', year: 'numeric' })
     : `${formatLocalDate(rangeFrom, timezone, { day: 'numeric', month: 'short' })} – ${formatLocalDate(rangeTo, timezone, { day: 'numeric', month: 'short', year: 'numeric' })}`;
@@ -447,7 +507,7 @@ export function CalendarPage() {
       </div>
       <Link className="calendar-builder-link" to="/build?from=calendar" aria-label="Build a meal"><NotebookPen size={18} strokeWidth={1.8} /><span className="calendar-builder-full">Build a meal</span><span className="calendar-builder-short">Build</span></Link>
     </div>, headerHost)}
-    <div className={`page-stack calendar-page${adding ? ' is-composing' : ''}${searchOpen ? ' is-searching' : ''}`} onTouchStart={(event) => {
+    <div className="page-stack calendar-page" onTouchStart={(event) => {
       if (view !== 'day' || monthPickerOpen || !window.matchMedia('(max-width: 760px)').matches || event.touches.length !== 1) return;
       swipeStart.current = { x: event.touches[0].clientX, y: event.touches[0].clientY };
     }} onTouchEnd={(event) => {
@@ -473,22 +533,21 @@ export function CalendarPage() {
           <div className={`calendar-day-date${isToday ? ' is-today' : ''}`}><span>{formatLocalDate(localDate, timezone, { weekday: 'short' })}</span><strong aria-current={isToday ? 'date' : undefined}>{formatLocalDate(localDate, timezone, { day: 'numeric' })}</strong></div>
         </div>
         <div className="calendar-day-metrics">
-          {fields.length > 0 && <section className={`calendar-nutrients${showAllNutrients ? ' is-expanded' : ' is-collapsed'}`} aria-label="Nutrients"><dl id="calendar-nutrient-metrics">{fields.map((field) => { const metric = summary.nutrients[field.field_id]!; return <div key={field.field_id}><dt>{field.standard_key === 'carbohydrate' ? 'Carbs' : field.name}</dt><dd>{metric.value === null ? 'Unknown' : `${number(metric.value)} ${field.unit}${metric.complete ? '' : ' · partial'}`}</dd></div>; })}</dl>{fields.length > 2 && <button className="calendar-nutrients-toggle" type="button" aria-controls="calendar-nutrient-metrics" aria-expanded={showAllNutrients} aria-label={showAllNutrients ? 'Show fewer nutrients' : `Show ${fields.length - 2} more nutrients`} onClick={() => setShowAllNutrients((current) => !current)}>{showAllNutrients ? 'Less' : `+${fields.length - 2}`}</button>}</section>}
+          {fields.length > 0 && <section className={`calendar-nutrients${showAllNutrients ? ' is-expanded' : ' is-collapsed'}`} aria-label="Nutrients"><dl id="calendar-nutrient-metrics">{fields.map((field) => { const metric = summary.nutrients[field.field_id]!; return <div key={field.field_id}><dt>{field.standard_key === 'carbohydrate' ? 'Carbs' : field.name}</dt><dd>{nutritionText(metric.value, field.unit, metric.estimated, !metric.complete)}</dd></div>; })}</dl>{fields.length > 2 && <button className="calendar-nutrients-toggle" type="button" aria-controls="calendar-nutrient-metrics" aria-expanded={showAllNutrients} aria-label={showAllNutrients ? 'Show fewer nutrients' : `Show ${fields.length - 2} more nutrients`} onClick={() => setShowAllNutrients((current) => !current)}>{showAllNutrients ? 'Less' : `+${fields.length - 2}`}</button>}</section>}
           <section className="calendar-calories" aria-label="Daily calorie summary">
             <span className="calendar-metric-label">Calories eaten</span>
-            <div className="calendar-calorie-value"><strong>{calories.value === null ? 'Unknown' : number(calories.value)}</strong><span>{target === null ? 'kcal' : `of ${number(target)} kcal`}{calories.complete ? '' : ' · partial'}</span></div>
+            <div className="calendar-calorie-value"><strong>{nutritionText(calories.value, '', calories.estimated)}</strong><span>{target === null ? 'kcal' : `of ${number(target)} kcal`}{calories.complete ? '' : ' · partial'}</span></div>
             <p>{target === null ? 'Target not set' : remaining === null ? `${number(target)} kcal target` : `${number(Math.abs(remaining))} ${remaining >= 0 ? 'remaining' : 'over'}${calories.complete ? '' : ' based on known values'}`}</p>
             {target !== null && <div className="calorie-track" role="progressbar" aria-label="Calories eaten compared with target" aria-valuemin={0} aria-valuemax={target} aria-valuenow={calories.value ?? 0}><span style={{ width: `${Math.min(100, Math.max(0, (calories.value ?? 0) / target * 100))}%` }} /></div>}
           </section>
         </div>
       </div>
       <div className="calendar-day-main">
-      {data.day?.status !== 'completed' && <button type="button" className="calendar-day-add-surface" aria-label="Add a meal in this day" disabled={busy || Boolean(adding)} onClick={openAdd}><span><Plus size={18} aria-hidden="true" /> Add a meal</span></button>}
+      {data.day?.status !== 'completed' && <button type="button" className="calendar-day-add-surface" aria-label="Add a meal in this day" disabled={busy || Boolean(composer)} onClick={openAdd}><span><Plus size={18} aria-hidden="true" /> Add a meal</span></button>}
 
       {data.day?.status === 'completed' && <StatusMessage tone="info">This older date has a saved completion snapshot. Its target is preserved as recorded.</StatusMessage>}
       <section className="today-meals" aria-label="Meals">
-        {adding && <div ref={setDraftHost} id="calendar-meal-draft-slot" className="calendar-meal-draft-slot" />}
-        {mealGroups.length === 0 && !adding ? data.day?.status === 'completed' ? <div className="calendar-day-empty">
+        {mealGroups.length === 0 ? data.day?.status === 'completed' ? <div className="calendar-day-empty">
           <h2>{data.day?.status === 'completed' ? 'No meals recorded' : localDate > today ? 'Plan your first meal' : 'Your first meal goes here'}</h2>
           <p>{data.day?.status === 'completed'
             ? 'This day was completed without any logged or planned meals.'
@@ -499,41 +558,55 @@ export function CalendarPage() {
         <div className="today-sections">{mealGroups.map(({ section, label, items }) => <section className="today-meal-section" key={section} aria-labelledby={label ? `calendar-${section}` : undefined} aria-label={label ? undefined : 'Meals'}>
           {label && <h3 className="visually-hidden" id={`calendar-${section}`}>{label}</h3>}
           <ul className="today-item-list">{groupDayItems(items).map((group) => {
-            const groupFields = profile.data?.nutrientFields ?? fields;
+            const groupFields = fields.slice(0, 3);
             const groupSummary = summarizeDay(group.items, groupFields.map((field) => field.field_id));
             const allEaten = group.items.every((item) => item.state === 'eaten');
             const allPlanned = group.items.every((item) => item.state === 'planned');
             const status = allEaten ? 'Eaten' : allPlanned ? 'Planned' : 'Partly eaten';
-            const mealFoods = group.items.map((item) => {
+            const recurring = group.items[0]?.series_id ? group.items[0] : undefined;
+            const composerPlan = allPlanned && group.items.every((item) => readItemLogging(item));
+            const calorieBlock = group.items.length === 1 && readItemLogging(group.items[0]!)?.kind === 'calorie_block' ? group.items[0] : undefined;
+            const plannedTotals = group.items.map(readPlannedNutrition);
+            const sumPlanned = (field?: string) => {
+              const values = plannedTotals.map((item) => field ? item?.nutrients[field] ?? null : item?.calories ?? null);
+              const known = values.filter((value): value is number => value !== null);
+              return { value: known.length > 0 ? known.reduce((sum, value) => sum + value, 0) : null, complete: known.length === values.length,
+                estimated: group.items.some((item) => readItemLogging(item)?.values[field ?? CALORIES]?.certainty === 'estimated') };
+            };
+            const mealFoods = group.items.map((item, itemIndex) => {
               const snapshot = readEatenSnapshot(item.eaten_snapshot);
               const planned = readPlannedChoice(item.planned_payload);
+              const plannedNutrition = plannedTotals[itemIndex];
+              const logging = readItemLogging(item);
               const itemComponents = snapshot?.components as unknown as Array<Record<string, unknown>> | undefined;
               const ingredients = itemComponents && itemComponents.length > 1 ? itemComponents.map((component, index) => {
                 const componentCalories = component.calories && typeof component.calories === 'object' ? (component.calories as { value?: number | null }).value : null;
                 const nutrientValues = component.nutrients && typeof component.nutrients === 'object' ? component.nutrients as Record<string, { value?: number | null }> : {};
                 return { key: `${item.id}-${index}`, name: String(component.food_name ?? 'Food'), portion: `${number(Number(component.amount ?? 1))} ${String(component.unit ?? 'serving')}`,
-                  calories: componentCalories == null ? '—' : number(componentCalories), metrics: [...groupFields].sort((a, b) => { const order = ['protein', 'carbohydrate', 'fat']; return (order.includes(a.standard_key ?? '') ? order.indexOf(a.standard_key!) : 99) - (order.includes(b.standard_key ?? '') ? order.indexOf(b.standard_key!) : 99); }).flatMap((field) => {
-                    const value = nutrientValues[field.field_id]?.value;
-                    return value == null ? [] : [{ label: field.standard_key === 'carbohydrate' ? 'Carbs' : field.name, value: `${number(value)} ${field.unit}` }];
-                  }) };
+                  calories: nutritionText(componentCalories ?? null), metrics: groupFields.map((field) => ({
+                    label: field.standard_key === 'carbohydrate' ? 'Carbs' : field.name,
+                    value: nutritionText(nutrientValues[field.field_id]?.value ?? null, field.unit),
+                  })) };
               }) : undefined;
               return {
                 key: item.id,
                 name: snapshot?.name ?? plannedItemName(item.planned_payload) ?? 'Food',
-                brand: snapshot?.brand,
+                brand: snapshot?.brand ?? (typeof planned?.manualPayload?.brand === 'string' ? planned.manualPayload.brand : null),
                 portion: `${number(snapshot?.selected_amount ?? planned?.amount ?? item.selected_amount ?? 1)} ${snapshot?.selected_unit ?? planned?.unit ?? item.selected_unit ?? 'serving'}`,
-                calories: snapshot?.calories.value == null ? '—' : number(snapshot.calories.value),
-                metrics: snapshot ? [...groupFields].sort((a, b) => { const order = ['protein', 'carbohydrate', 'fat']; return (order.includes(a.standard_key ?? '') ? order.indexOf(a.standard_key!) : 99) - (order.includes(b.standard_key ?? '') ? order.indexOf(b.standard_key!) : 99); }).flatMap((field) => {
-                  const value = snapshot.nutrients[field.field_id];
-                  return value ? [{ label: field.standard_key === 'carbohydrate' ? 'Carbs' : field.name, value: value.value == null ? '—' : `${number(value.value)} ${field.unit}` }] : [];
-                }) : [], ingredients,
+                calories: nutritionText(snapshot?.calories.value ?? plannedNutrition?.calories ?? null, '', logging?.values[CALORIES]?.certainty === 'estimated'),
+                metrics: groupFields.map((field) => ({
+                  label: field.standard_key === 'carbohydrate' ? 'Carbs' : field.name,
+                  value: nutritionText(snapshot?.nutrients[field.field_id]?.value ?? plannedNutrition?.nutrients[field.field_id] ?? null,
+                    field.unit, logging?.values[field.field_id]?.certainty === 'estimated', snapshot?.nutrients[field.field_id]?.complete === false),
+                })), ingredients,
               };
             });
-            const metrics = allEaten ? [...groupFields].sort((a, b) => { const order = ['protein', 'carbohydrate', 'fat']; return (order.includes(a.standard_key ?? '') ? order.indexOf(a.standard_key!) : 99) - (order.includes(b.standard_key ?? '') ? order.indexOf(b.standard_key!) : 99); }).flatMap((field) => {
-              const key = field.standard_key;
-              const nutrient = groupSummary.nutrients[field.field_id];
-              return [{ label: key === 'carbohydrate' ? 'Carbs' : field.name, value: nutrient?.value == null ? '—' : `${number(nutrient.value)} ${field.unit}` }];
-            }) : [];
+            const total = allPlanned ? sumPlanned() : groupSummary.calories;
+            const metrics = calorieBlock ? [] : groupFields.map((field) => {
+              const metric = allPlanned ? sumPlanned(field.field_id) : groupSummary.nutrients[field.field_id]!;
+              return { label: field.standard_key === 'carbohydrate' ? 'Carbs' : field.name,
+                value: nutritionText(metric.value, field.unit, metric.estimated, !metric.complete) };
+            });
             const measures = group.items.map((item) => item.revision > 1 ? null : item.state === 'eaten'
               ? readEatenSnapshot(item.eaten_snapshot)?.display_measure ?? null
               : readPlannedMeasure(item.planned_payload));
@@ -546,25 +619,34 @@ export function CalendarPage() {
             return <li key={group.id} className="calendar-saved-meal">
               <CalendarMealCard
                 state={`${status} meal`}
-                label={label}
-                calories={groupSummary.calories.value === null ? '—' : number(groupSummary.calories.value)}
+                label={recurring ? [label, 'Repeating'].filter(Boolean).join(' · ') : label}
+                calories={nutritionText(total.value, '', total.estimated, !total.complete)}
                 foods={mealFoods}
                 metrics={metrics}
                 expanded={expandedGroupId === group.id}
                 onToggle={() => setExpandedGroupId((current) => current === group.id ? null : group.id)}
-                onDelete={data.day?.status !== 'completed' ? () => void deleteMeal(group.items) : undefined}
+                onDelete={data.day?.status !== 'completed' ? () => {
+                  if (recurring) { seriesMutation.reset(); setSeriesScope('one'); setRemovingSeries(recurring); }
+                  else void deleteMeal(group.items);
+                } : undefined}
                 onDuplicate={data.day?.status !== 'completed' ? () => void duplicateMeal(group.items) : undefined}
-                onMarkEaten={group.items.some((item) => item.state === 'planned') && localDate <= today && data.day?.status !== 'completed' ? () => markMealEaten(group.items) : undefined}
+                onEdit={(calorieBlock || recurring || composerPlan) && data.day?.status !== 'completed' ? (tile) => editOccurrence(group.items, tile, calorieBlock) : undefined}
+                onAttachFoods={calorieBlock && data.day?.status !== 'completed' ? (tile) => editOccurrence(group.items, tile, calorieBlock, true) : undefined}
+                markEatenLabel={calorieBlock ? readItemLogging(calorieBlock)?.values[CALORIES]?.certainty === 'estimated' ? 'Log estimate' : 'Log calories' : undefined}
+                onMarkEaten={group.items.some((item) => item.state === 'planned') && localDate <= today && data.day?.status !== 'completed' ? (tile) => markMealEaten(group.items, tile) : undefined}
                 onMarkNotEaten={allEaten && data.day?.status !== 'completed' ? () => void deleteMeal(group.items, 'not-eaten') : undefined}
                 busy={busy}
               >
-                <div className="calendar-meal-saved-details">{group.items.map((item) => <CalendarMealItemEditor key={`${item.id}-${item.revision}`} item={item} fields={(profile.data?.nutrientFields ?? []).map(({ field_id, name, unit }) => ({ field_id, name, unit }))} busy={busy} onSave={(values) => editFoodSnapshotMutation.mutate({ ...values, requestId: crypto.randomUUID(), localDate, itemId: item.id, expectedRevision: item.revision })} onEditPortion={() => { setEditingItem(item); setEditAmount(String(item.selected_amount ?? 1)); }} onRemove={() => item.state === 'eaten'
+                {!calorieBlock && !recurring && !composerPlan && <div className="calendar-meal-saved-details">{group.items.map((item) => <CalendarMealItemEditor key={`${item.id}-${item.revision}`} item={item} fields={(profile.data?.nutrientFields ?? []).map(({ field_id, name, unit }) => ({ field_id, name, unit }))} busy={busy} onSave={(values) => editFoodSnapshotMutation.mutate({ ...values, requestId: crypto.randomUUID(), localDate, itemId: item.id, expectedRevision: item.revision })} onEditPortion={() => { setEditingItem(item); setEditAmount(String(item.selected_amount ?? 1)); }} onRemove={() => item.state === 'eaten'
                   ? reviseMutation.mutate({ requestId: crypto.randomUUID(), localDate, itemId: item.id, expectedRevision: item.revision, action: 'remove', item })
-                  : removePlanMutation.mutate({ requestId: crypto.randomUUID(), localDate, itemId: item.id, expectedRevision: item.revision, item })} />)}</div>
+                  : removePlanMutation.mutate({ requestId: crypto.randomUUID(), localDate, itemId: item.id, expectedRevision: item.revision, item })} />)}</div>}
               </CalendarMealCard>
             </li>;
           })}</ul>
         </section>)}</div>}
+        {composer && !composer.anchorTile && <div ref={setDraftTile} className="calendar-meal-tile is-draft" aria-hidden="true">
+          <span className="calendar-meal-tile-top"><strong>New meal</strong></span>
+        </div>}
       </section>
       </div>
       </section>
@@ -576,6 +658,8 @@ export function CalendarPage() {
       {restorePlanMutation.isError && restorePlanMutation.variables && <div className="page-stack"><StatusMessage tone="error">Plan restoration could not be confirmed.</StatusMessage><button className="text-button" type="button" disabled={busy} onClick={() => restorePlanMutation.mutate(restorePlanMutation.variables)}>Retry same request</button></div>}
 
       {notice && <StatusMessage tone="success">{notice}</StatusMessage>}
+      {seriesMutation.isError && !removingSeries && <div className="calendar-actions"><StatusMessage tone="error">{seriesMutation.error.message}</StatusMessage>
+        {seriesMutation.variables && <button className="text-button" type="button" disabled={busy} onClick={() => seriesMutation.mutate(seriesMutation.variables!)}>Retry same request</button>}</div>}
       {pendingChoice && (planMutation.isError || logMutation.isError) && <div className="page-stack"><StatusMessage tone="error">The save could not be confirmed. Refresh this date or retry the same request safely.</StatusMessage>
         <div className="calendar-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => pendingChoice.action === 'plan' ? planMutation.mutate(pendingChoice.input) : logMutation.mutate(pendingChoice.input)}>Retry same request</button><button type="button" className="text-button" onClick={() => void dayQuery.refetch()}>Refresh date</button></div></div>}
       {data.day?.status === 'completed' && <p className="field-hint">This historical completed date is preserved while its correction flow is rebuilt.</p>}
@@ -596,11 +680,31 @@ export function CalendarPage() {
       </>}
     </Dialog>
 
-    {userId && adding && <AddChoiceDialog open={searchOpen} userId={userId} fields={profile.data?.nutrientFields ?? []} futureDate={adding === 'plan'} initialSection="unlabelled" dateLabel={formatLocalDate(localDate, timezone, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} anchor={composerAnchor} draftHost={draftHost}
-      actionMode={adding} onActionModeChange={localDate <= today ? setAdding : undefined}
-      dialogTitle="Add a meal"
-      onDraftCountChange={setDraftCount} onResumeSearch={() => setSearchOpen(true)} onDiscardDraft={() => { setSearchOpen(false); setAdding(null); }}
-      onClose={() => { setSearchOpen(false); if (draftCount === 0) setAdding(null); }} onSavedOnly={(name) => { setSearchOpen(false); if (draftCount === 0) setAdding(null); setNotice(`${name} saved to your Library.`); }} onPrepared={(choice) => { const action = adding; setAdding(null); setSearchOpen(false); submit(choice, action); }} />}
+    <Dialog open={Boolean(removingSeries)} title="Remove repeating meal?" closeDisabled={seriesMutation.isPending} onClose={() => setRemovingSeries(null)}>
+      <SeriesScopeSelect value={seriesScope} onChange={setSeriesScope} disabled={seriesMutation.isPending || seriesMutation.isError} />
+      {seriesMutation.isError && <StatusMessage tone="error">{seriesMutation.error.message}</StatusMessage>}
+      <div className="dialog-actions">
+        <button type="button" className="secondary-button" disabled={seriesMutation.isPending} onClick={() => setRemovingSeries(null)}>Cancel</button>
+        <button type="button" className="primary-button" disabled={seriesMutation.isPending || !removingSeries?.series_id} onClick={() => {
+          if (!removingSeries?.series_id || !removingSeries.series_revision) return;
+          if (seriesMutation.isError && seriesMutation.variables) { seriesMutation.mutate(seriesMutation.variables); return; }
+          seriesMutation.mutate({ requestId: crypto.randomUUID(), localDate, state: 'removed', items: [],
+            seriesEdit: { id: removingSeries.series_id, revision: removingSeries.series_revision, scope: seriesScope } });
+        }}>{seriesMutation.isError ? 'Retry removal' : 'Remove'}</button>
+      </div>
+    </Dialog>
+
+    {userId && composer && profile.data && <AddChoiceDialog userId={userId} fields={profile.data.nutrientFields} plannedItems={composer.plannedItems} startEaten={composer.startEaten}
+      initialDate={localDate} today={today} timezone={timezone} anchor={composer.anchorTile ?? draftTile} block={composer.block} attachFoods={composer.attachFoods}
+      onClose={closeComposer} onSaved={(input: ComposerSave) => {
+        closeComposer();
+        if (input.localDate !== localDate) chooseDate(input.localDate);
+        setNotice(input.state === 'eaten' ? 'Meal logged.' : input.recurrence || input.seriesEdit ? 'Repeating plan saved.' : 'Meal planned.');
+        void refresh(input.localDate, Boolean(input.recurrence || input.seriesEdit));
+        void queryClient.invalidateQueries({ queryKey: queryKeys.foods(userId) });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.foodPortionPreferences(userId) });
+      }} />}
+
     </div></>;
 }
 

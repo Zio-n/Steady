@@ -53,14 +53,14 @@ function parseCalendarDay(data: Json, localDate: string): CalendarDay {
 
 export async function readCalendarDay(localDate: string): Promise<CalendarDay> {
   if (!supabase) throw new DataError('Connect Supabase before loading your calendar.', 'configuration');
-  const { data, error } = await supabase.rpc('read_calendar_day', { p_local_date: localDate });
+  const { data, error } = await supabase.rpc('read_calendar_day_with_series', { p_local_date: localDate });
   if (error) throw toDataError(error);
   return parseCalendarDay(data, localDate);
 }
 
 export async function readCalendarRange(fromDate: string, toDate: string): Promise<CalendarDay[]> {
   if (!supabase) throw new DataError('Connect Supabase before loading your calendar.', 'configuration');
-  const { data, error } = await supabase.rpc('read_calendar_range', { p_from_date: fromDate, p_to_date: toDate });
+  const { data, error } = await supabase.rpc('read_calendar_range_with_series', { p_from_date: fromDate, p_to_date: toDate });
   if (error) throw toDataError(error);
   if (!Array.isArray(data)) throw new DataError('The calendar range response was incomplete. Refresh this view.', 'unknown');
   return data.map((row) => {
@@ -151,6 +151,48 @@ export async function transferCalendarPlan(input: {
     p_item_id: input.itemId,
     p_expected_item_revision: input.expectedRevision,
     p_action: input.action,
+  });
+  if (error) throw toDataError(error);
+  return data;
+}
+
+export type ComposerEntry = {
+  section: CalendarChoice['section'];
+  amount: number;
+  unit: string;
+  payload: { name: string; brand?: string | null; basisAmount: number; basisUnit: string; caloriesKcal: number | null; nutrients: Record<string, number | null> };
+  logging: import('../../domain/mealComposer').LoggingDetails;
+  variant?: { name: string; brand: string | null; basisAmount: number; basisUnit: string; caloriesKcal: number | null; nutrients: Record<string, number>; logging: import('../../domain/mealComposer').LoggingDetails };
+};
+
+export type ComposerSave = {
+  requestId: string;
+  localDate: string;
+  state: 'eaten' | 'planned';
+  items: ComposerEntry[];
+  replace?: { id: string; revision: number };
+  replaceGroup?: Array<{ id: string; revision: number }>;
+  recurrence?: { frequency: 'daily' | 'weekly'; interval: number; weekdays: number[]; endsOn?: string };
+  seriesEdit?: { id: string; revision: number; scope: SeriesScope };
+};
+
+export type SeriesScope = 'one' | 'following' | 'all';
+type RemoveSeriesOccurrence = Omit<ComposerSave, 'state' | 'recurrence' | 'replace' | 'replaceGroup' | 'seriesEdit'> & {
+  state: 'removed'; seriesEdit: NonNullable<ComposerSave['seriesEdit']>;
+};
+
+export async function saveCalendarComposer(input: ComposerSave | RemoveSeriesOccurrence) {
+  if (!supabase) throw new DataError('Connect Supabase before saving this meal.', 'configuration');
+  const { data, error } = await supabase.rpc('save_calendar_composer', {
+    p_request_id: input.requestId,
+    p_local_date: input.localDate,
+    p_state: input.state,
+    p_items: input.items as unknown as Json,
+    p_replace_item_id: input.state !== 'removed' ? input.replace?.id : undefined,
+    p_expected_revision: input.state !== 'removed' ? input.replace?.revision : undefined,
+    p_recurrence: input.state !== 'removed' ? input.recurrence : undefined,
+    p_series_edit: input.seriesEdit,
+    p_replace_group: input.state !== 'removed' ? input.replaceGroup : undefined,
   });
   if (error) throw toDataError(error);
   return data;

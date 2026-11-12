@@ -1,4 +1,5 @@
 import type { Json, Tables } from '../data/database.types';
+import { CALORIES, readLoggingDetails, type LoggingDetails } from './mealComposer.ts';
 
 export type CapturedMetric = {
   value: number | null;
@@ -7,7 +8,7 @@ export type CapturedMetric = {
   totalComponents: number;
 };
 export type CapturedNutrient = CapturedMetric & { name: string; unit: string };
-/** Versioned source snapshot contract shared by Today and the upcoming log RPC. */
+/** Versioned nutrition snapshot captured by calendar logging. */
 export type EatenItemSnapshot = {
   schema_version: 1;
   name: string;
@@ -21,9 +22,14 @@ export type EatenItemSnapshot = {
   calories: CapturedMetric;
   nutrients: Record<string, CapturedNutrient>;
   components?: unknown[];
+  logging?: LoggingDetails;
 };
-export type DayItem = Pick<Tables<'day_items'>, 'id' | 'section' | 'state' | 'source' | 'selected_amount' | 'selected_unit' | 'planned_payload' | 'eaten_snapshot' | 'eaten_at' | 'revision'> & { meal_group_id?: string | null };
-export type SummaryMetric = { value: number | null; complete: boolean; knownEntries: number; totalEntries: number };
+export type DayItem = Pick<Tables<'day_items'>, 'id' | 'section' | 'state' | 'source' | 'selected_amount' | 'selected_unit' | 'planned_payload' | 'eaten_snapshot' | 'eaten_at' | 'revision'> & {
+  meal_group_id?: string | null;
+  series_id?: string;
+  series_revision?: number;
+};
+export type SummaryMetric = { value: number | null; complete: boolean; knownEntries: number; totalEntries: number; estimated?: boolean };
 
 function object(value: Json | null): Record<string, Json | undefined> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : null;
@@ -63,6 +69,7 @@ export function readEatenSnapshot(value: Json | null): EatenItemSnapshot | null 
     captured_at: typeof data.captured_at === 'string' ? data.captured_at : null,
     selected_amount: data.selected_amount, selected_unit: data.selected_unit, calories, nutrients,
     components: Array.isArray(data.components) ? data.components : [],
+    logging: readLoggingDetails(data.logging),
   };
 }
 
@@ -82,13 +89,33 @@ function summarize(metrics: Array<CapturedMetric | null>, noEntriesValue = 0): S
 export function summarizeDay(items: DayItem[], displayedFieldIds: string[]) {
   const eaten = items.filter((item) => item.state === 'eaten');
   const snapshots = eaten.map((item) => readEatenSnapshot(item.eaten_snapshot));
-  const calories = summarize(snapshots.map((snapshot) => snapshot?.calories ?? null));
+  const details = eaten.map((item, index) => snapshots[index]?.logging ?? readLoggingDetails(object(item.planned_payload)?.logging));
+  const withEstimate = (metric: SummaryMetric, field: string) => details.some((detail) => detail?.values[field]?.certainty === 'estimated')
+    ? { ...metric, estimated: true } : metric;
+  const calories = withEstimate(summarize(snapshots.map((snapshot) => snapshot?.calories ?? null)), CALORIES);
   const nutrients = Object.fromEntries(displayedFieldIds.map((fieldId) => [
     fieldId,
-    summarize(snapshots.map((snapshot) => snapshot?.nutrients[fieldId] ?? null)),
+    withEstimate(summarize(snapshots.map((snapshot) => snapshot?.nutrients[fieldId] ?? null)), fieldId),
   ]));
   const countMeals = (entries: DayItem[]) => new Set(entries.map((item) => item.meal_group_id ?? item.id)).size;
   return { calories, nutrients, eatenCount: countMeals(eaten), plannedCount: countMeals(items.filter((item) => item.state === 'planned')) };
+}
+
+export function readItemLogging(item: Pick<DayItem, 'eaten_snapshot' | 'planned_payload'>): LoggingDetails | undefined {
+  return readLoggingDetails(object(item.eaten_snapshot)?.logging ?? object(item.planned_payload)?.logging);
+}
+
+export function readPlannedNutrition(item: DayItem) {
+  const planned = readPlannedChoice(item.planned_payload);
+  const payload = planned?.manualPayload;
+  if (!planned || planned.sourceKind !== 'one_off_food' || !payload || payload.basisUnit !== planned.unit
+    || typeof payload.basisAmount !== 'number' || payload.basisAmount <= 0) return null;
+  const ratio = planned.amount / payload.basisAmount;
+  const nutrients = payload.nutrients && typeof payload.nutrients === 'object' ? payload.nutrients : {};
+  return {
+    calories: typeof payload.caloriesKcal === 'number' ? payload.caloriesKcal * ratio : null,
+    nutrients: Object.fromEntries(Object.entries(nutrients).map(([key, value]) => [key, typeof value === 'number' ? value * ratio : null])),
+  };
 }
 
 export function plannedItemName(payload: Json): string | null {

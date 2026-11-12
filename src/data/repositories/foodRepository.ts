@@ -4,7 +4,7 @@ import { DataError, toDataError } from '../dataError';
 
 export type Food = Tables<'foods'>;
 export type FoodWithNutrients = { food: Food; nutrients: Record<string, number> };
-export type FoodReferences = { meals: { id: string; name: string }[]; routineSlots: { weekday: number; section: string; effectiveFrom: string }[] };
+export type FoodReferences = { meals: { id: string; name: string }[] };
 
 /** Searches only active foods owned by the authenticated account; RLS remains authoritative. */
 export async function searchFoods(userId: string, search: string, limit = 50): Promise<Food[]> {
@@ -64,28 +64,11 @@ export async function loadFoodReferences(userId: string, foodId: string): Promis
     .select('meal_id').eq('user_id', userId).eq('food_id', foodId);
   if (componentError) throw toDataError(componentError);
   const mealIds = [...new Set(components.map((component) => component.meal_id))];
-  if (mealIds.length === 0) return { meals: [], routineSlots: [] };
-  const [mealsResult, slotsResult] = await Promise.all([
-    supabase.from('meals').select('id,name').eq('user_id', userId).in('id', mealIds),
-    supabase.from('routine_slots').select('weekday,section,routine_version_id,meal_id')
-      .eq('user_id', userId).in('meal_id', mealIds),
-  ]);
-  if (mealsResult.error) throw toDataError(mealsResult.error);
-  if (slotsResult.error) throw toDataError(slotsResult.error);
-  const versionIds = [...new Set(slotsResult.data.map((slot) => slot.routine_version_id))];
-  const versionsResult = versionIds.length
-    ? await supabase.from('routine_versions').select('id,effective_from').eq('user_id', userId).in('id', versionIds)
-    : { data: [], error: null };
-  if (versionsResult.error) throw toDataError(versionsResult.error);
-  const effectiveFromById = new Map(versionsResult.data.map((version) => [version.id, version.effective_from]));
-  return {
-    meals: mealsResult.data,
-    routineSlots: slotsResult.data.map((slot) => ({
-      weekday: slot.weekday,
-      section: slot.section,
-      effectiveFrom: effectiveFromById.get(slot.routine_version_id) ?? '',
-    })),
-  };
+  if (mealIds.length === 0) return { meals: [] };
+  const { data: meals, error } = await supabase.from('meals').select('id,name')
+    .eq('user_id', userId).in('id', mealIds);
+  if (error) throw toDataError(error);
+  return { meals };
 }
 
 export type SaveFoodInput = {

@@ -2,7 +2,21 @@
 
 **Started:** 27 October 2026  
 **Plan:** [Product reset and semi-rebuild](product-reset-and-semi-rebuild-plan.md)  
-**Current checkpoint:** R0 complete; calendar reset foundation in progress. New read/write calendar migrations are applied locally with the two existing accounts and dated history preserved. B3 editing and copy/move UI is underway; B1's isolated source evaluation is documented, while its downloaded-data benchmark remains outstanding.
+**Current checkpoint:** Phase 0 logging reset complete locally (8 November 2026). See [removal, preservation and verification evidence](phase-0-cleanup.md). No Phase 1 development started.
+
+## Phase 0 — logging reset, 8 November 2026
+
+- Deleted Explore and obsolete recipe/routine/Shuffle/weekly-allocation/completion/carry implementation, tests, generator/assets and unused dependencies/styles. Food grouping remains.
+- Applied forward cleanup and direct calendar-account reference migrations after a private backup and isolated rehearsals. Final generated types match the local schema. No data-bearing reset or hosted change.
+- Restored-upgrade and original-record hashes match: 3 accounts, 2 foods, 3 groups, 3 components, 8 dates, 18 items, 6 history rows, with all eaten snapshots preserved.
+- Empty product-schema install: 69 migrations pass without catalogue imports. Four optional historical data seeds were guarded to fix a reproducible fresh-install FK failure.
+- Current checks pass: typecheck/lint, 36 unit tests, 9 contrast pairs, production build/PWA policy, and 10 DB suites / 163 assertions on fresh, upgraded and local databases. The supported local DB command uses `--network-id steady-loopback` for this stack.
+- Browser smoke passes on phone/desktop with keyboard input: setup, search, quantities, grouped logging, snapshot correction, settings/targets, manual food, saved-group save/reuse, planning separation and day/week/month. A false planned-card zero now displays unknown because the retained plan has no nutrition snapshot. The synthetic account/fixtures were removed; original hashes match afterward.
+- README, active repository contracts/tracker/PWA docs and Notion overview/product/design/data/build docs now follow the reset. Recipes are only a possible future improvement in Notion. Phase 1 is the next checkpoint.
+
+## Historical evidence — earlier reset sequence
+
+The dated sections below record previous states and checks, including APIs since removed. They are not active scope, delivery instructions or evidence that the current release passed those earlier checks.
 
 ## R0 — Recoverable baseline
 

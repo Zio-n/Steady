@@ -1,11 +1,10 @@
 import { useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { BookOpen, Calendar, CalendarDays, CalendarRange, Compass, Menu, Settings2 } from 'lucide-react';
+import { BookOpen, Calendar, CalendarDays, CalendarRange, Menu, Settings2 } from 'lucide-react';
 
 const navItems = [
   { to: '/', label: 'Calendar', icon: CalendarDays, end: true },
   { to: '/library', label: 'Library', icon: BookOpen },
-  { to: '/explore', label: 'Explore', icon: Compass },
   { to: '/settings', label: 'Settings', icon: Settings2 },
 ];
 
@@ -29,7 +28,7 @@ export function AppNavigation({ open, onToggle, onClose, onCalendarHeaderHost }:
     <header className="topbar">
       <button ref={menuRef} className="menu-trigger" type="button" aria-label={open ? 'Close menu' : 'Open menu'} aria-controls="app-sidebar" aria-expanded={open} onClick={onToggle}><Menu size={22} strokeWidth={1.8} /></button>
       <NavLink className="wordmark" to="/" aria-label="Steady home">steady<span>.</span></NavLink>
-      {!isCalendar && <span className="topbar-context">{pathname === '/library' ? 'Library' : pathname === '/build' ? 'Build a meal' : pathname === '/explore' ? 'Explore' : 'Settings'}</span>}
+      {!isCalendar && <span className="topbar-context">{pathname === '/library' ? 'Library' : pathname === '/build' ? 'Build a meal' : 'Settings'}</span>}
       {isCalendar && <div ref={onCalendarHeaderHost} className="calendar-header-controls" id="calendar-header-controls" />}
     </header>
     <aside id="app-sidebar" className={`sidebar-dialog${open ? ' is-open' : ''}`} aria-label="Main menu" aria-hidden={!open} inert={!open}>

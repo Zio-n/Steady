@@ -10,7 +10,6 @@ export const router = createBrowserRouter([{
   HydrateFallback: () => <main className="main-content"><LoadingSkeleton label="Opening Steady" /></main>,
   children: [
   { path: '/sign-in', lazy: async () => ({ Component: (await import('./ui/pages/SignInPage')).SignInPage }) },
-  { path: '/explore', lazy: async () => ({ Component: (await import('./ui/pages/ExplorePage')).ExplorePage }) },
   { path: '/onboarding', lazy: async () => ({ Component: (await import('./ui/pages/CalendarSetupPage')).CalendarSetupPage }) },
   {
     element: <ProtectedRoute />,
@@ -24,7 +23,6 @@ export const router = createBrowserRouter([{
           { path: 'calendar', element: <Navigate to="/" replace /> },
           { path: 'library', lazy: async () => ({ Component: (await import('./ui/pages/LibraryPage')).LibraryPage }) },
           { path: 'build', lazy: async () => ({ Component: (await import('./ui/pages/MealBuilderPage')).MealBuilderPage }) },
-          { path: 'routine', element: <Navigate to="/" replace /> },
           { path: 'profile', element: <Navigate to="/settings" replace /> },
           { path: 'settings', lazy: async () => ({ Component: (await import('./ui/pages/ProfilePage')).ProfilePage }) },
           { path: '*', element: <Navigate to="/" replace /> },

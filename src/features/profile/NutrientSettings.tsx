@@ -98,7 +98,7 @@ export function NutrientSettings({ fields, onDirtyChange }: { fields: NutrientFi
   return (
     <section className="profile-section nutrient-settings" aria-labelledby="nutrient-settings-heading">
       <div className="profile-section-heading"><h2 id="nutrient-settings-heading">Nutrient settings</h2></div>
-      <p className="field-hint">Choose what appears in your summaries and arrange its order. Field units never change; create a new field if the unit should differ.</p>
+      <p className="field-hint">Choose which nutrients to show and arrange their order. The first three selected nutrients appear in the meal composer.</p>
       {formError && <StatusMessage tone="error">{formError}</StatusMessage>}
       {notice && <StatusMessage tone="success">{notice}</StatusMessage>}
       <ol className="nutrient-settings-list">

@@ -5,11 +5,11 @@ import { Check, Copy, EllipsisVertical, Pencil, Trash2, Undo2, X } from 'lucide-
 export type CalendarMealFood = { key: string; name: string; brand?: string | null; portion: string; calories: string; metrics?: CalendarMealMetric[]; ingredients?: Array<{ key: string; name: string; portion: string; calories: string; metrics: CalendarMealMetric[] }> };
 export type CalendarMealMetric = { label: string; value: string };
 
-export function CalendarMealCard({ state, label, calories, foods, metrics, expanded, onToggle, onDetailHost, onDelete, onDuplicate, onMarkEaten, onMarkNotEaten, busy = false, children }: {
+export function CalendarMealCard({ state, label, calories, foods, metrics, expanded, onToggle, onDelete, onDuplicate, onEdit, onAttachFoods, onMarkEaten, markEatenLabel = 'Mark as eaten', onMarkNotEaten, busy = false, children }: {
   state: string; label?: string | null; calories: string; foods: CalendarMealFood[]; metrics: CalendarMealMetric[];
-  expanded: boolean; onToggle: () => void; compact?: boolean;
-  onDetailHost?: (host: HTMLDivElement | null) => void;
-  onDelete?: () => void; onDuplicate?: () => void; onMarkEaten?: () => void; onMarkNotEaten?: () => void; busy?: boolean;
+  expanded: boolean; onToggle: () => void;
+  onEdit?: (tile: HTMLButtonElement) => void; onAttachFoods?: (tile: HTMLButtonElement) => void; markEatenLabel?: string;
+  onDelete?: () => void; onDuplicate?: () => void; onMarkEaten?: (tile: HTMLButtonElement) => void; onMarkNotEaten?: () => void; busy?: boolean;
   children?: ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
@@ -85,7 +85,11 @@ export function CalendarMealCard({ state, label, calories, foods, metrics, expan
     </button>
     {expanded && createPortal(<div ref={panelRef} role="dialog" aria-label={`Meal: ${title}`} aria-modal="false" className="calendar-meal-floating">
       <div className="calendar-meal-floating-toolbar">
-        {children && <button type="button" className={`icon-button${editing ? ' is-active' : ''}`} aria-label={editing ? 'Finish editing meal' : 'Edit meal'} aria-pressed={editing} disabled={busy} onClick={() => { setEditing((current) => !current); setMenuOpen(false); }}><Pencil size={17} /></button>}
+        {(children || onEdit) && <button type="button" className={`icon-button${editing ? ' is-active' : ''}`} aria-label={editing ? 'Finish editing meal' : 'Edit meal'} aria-pressed={onEdit ? undefined : editing} disabled={busy} onClick={() => {
+          if (onEdit) { if (tileRef.current) onEdit(tileRef.current); }
+          else setEditing((current) => !current);
+          setMenuOpen(false);
+        }}><Pencil size={17} /></button>}
         {onDelete && <button type="button" className="icon-button calendar-meal-delete" aria-label="Delete meal" disabled={busy} onClick={onDelete}><Trash2 size={17} /></button>}
         {onDuplicate && <div className="calendar-meal-menu-anchor" ref={menuRef}><button type="button" className="icon-button" aria-label="More meal actions" aria-haspopup="menu" aria-expanded={menuOpen} disabled={busy} onClick={() => setMenuOpen((open) => !open)}><EllipsisVertical size={19} /></button>{menuOpen && <div className="calendar-meal-action-menu" role="menu"><button type="button" role="menuitem" disabled={busy} onClick={() => { setMenuOpen(false); onDuplicate(); }}><Copy size={15} />Duplicate</button></div>}</div>}
         <button ref={closeRef} type="button" className="icon-button" aria-label="Close meal details" onClick={() => { onToggle(); tileRef.current?.focus({ preventScroll: true }); }}><X size={19} /></button>
@@ -95,15 +99,18 @@ export function CalendarMealCard({ state, label, calories, foods, metrics, expan
         <p className="calendar-meal-floating-state">{[label && label !== 'unlabelled' ? label : '', mealState].filter(Boolean).join(' · ')}</p>
         {children && editing
           ? <div className="calendar-meal-edit-list">{children}</div>
-          : <ul className="calendar-meal-food-preview" aria-label="Foods in this meal">{foods.map((food) => <li key={food.key}>
+          : !onAttachFoods && <ul className="calendar-meal-food-preview" aria-label="Foods in this meal">{foods.map((food) => <li key={food.key}>
             <details className="calendar-meal-food-accordion"><summary><span className="calendar-meal-food-name"><strong>{food.name}</strong>{food.brand && <small>{food.brand}</small>}</span><span className="calendar-meal-food-portion">{food.portion}</span><span className="calendar-meal-food-calories">{food.calories} <small>kcal</small></span></summary>
             {food.ingredients && food.ingredients.length > 0 ? <ul className="calendar-meal-ingredient-preview">{food.ingredients.map((ingredient) => <li key={ingredient.key}><div><strong>{ingredient.name}</strong><small>{ingredient.portion}</small><span>{ingredient.calories} kcal</span></div>{ingredient.metrics.length > 0 && <dl className="calendar-meal-food-attributes">{ingredient.metrics.map((metric) => <div key={metric.label}><dt>{metric.label}</dt><dd>{metric.value}</dd></div>)}</dl>}</li>)}</ul>
               : food.metrics && food.metrics.length > 0 && <dl className="calendar-meal-food-attributes">{food.metrics.map((metric) => <div key={metric.label}><dt>{metric.label}</dt><dd>{metric.value}</dd></div>)}</dl>}
           </details></li>)}</ul>}
-        {onDetailHost && <div ref={onDetailHost} className="calendar-meal-draft-editor" />}
         {metrics.length > 0 && <section className="calendar-meal-nutrition" aria-labelledby="calendar-meal-nutrition-heading"><h3 id="calendar-meal-nutrition-heading">Meal nutrition</h3><dl>{metrics.map((metric) => <div key={metric.label}><dt>{metric.label}</dt><dd>{metric.value}</dd></div>)}</dl></section>}
       </div>
-      {(onMarkEaten || onMarkNotEaten) && <div className="calendar-meal-floating-footer">{onMarkNotEaten && <button type="button" className="secondary-button" disabled={busy} onClick={onMarkNotEaten}><Undo2 size={16} />Mark as not eaten</button>}{onMarkEaten && <button type="button" className="primary-button" disabled={busy} onClick={onMarkEaten}><Check size={16} />Mark as eaten</button>}</div>}
+      {(onMarkEaten || onMarkNotEaten || onAttachFoods) && <div className="calendar-meal-floating-footer">
+        {onAttachFoods && <button type="button" className="secondary-button" disabled={busy} onClick={() => { if (tileRef.current) onAttachFoods(tileRef.current); }}>Add foods</button>}
+        {onMarkNotEaten && <button type="button" className="secondary-button" disabled={busy} onClick={onMarkNotEaten}><Undo2 size={16} />Mark as not eaten</button>}
+        {onMarkEaten && <button type="button" className="primary-button" disabled={busy} onClick={() => { if (tileRef.current) onMarkEaten(tileRef.current); }}><Check size={16} />{markEatenLabel}</button>}
+      </div>}
     </div>, document.body)}
   </>;
 }

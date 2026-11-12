@@ -6,7 +6,7 @@ insert into auth.users (id,aud,role,email,encrypted_password,email_confirmed_at)
 values ('77777777-7777-4777-8777-777777777777','authenticated','authenticated','meal-group@test.invalid','',now());
 select set_config('request.jwt.claim.sub','77777777-7777-4777-8777-777777777777',true);
 set local role authenticated;
-select public.complete_profile_onboarding('77777777-7777-4777-8777-777777777778','Europe/London',2100,'["protein"]'::jsonb,'{"protein":100}'::jsonb);
+select public.complete_calendar_setup('77777777-7777-4777-8777-777777777778','Europe/London',2100);
 
 create temp table meal_test_inputs (kind text primary key, payload jsonb);
 grant all on meal_test_inputs to authenticated;

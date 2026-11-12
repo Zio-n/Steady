@@ -1,15 +1,11 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select extensions.plan(14);
+select extensions.plan(11);
 
 insert into auth.users (id,aud,role,email,encrypted_password,email_confirmed_at)
 values
   ('99999999-9999-4999-8999-999999999999','authenticated','authenticated','setup-a@test.invalid','',now()),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','authenticated','authenticated','setup-b@test.invalid','',now());
-create temp table legacy_counts as select
-  (select count(*) from public.weeks) as weeks,
-  (select count(*) from public.weekly_pattern_versions) as patterns,
-  (select count(*) from public.routine_versions) as routines;
 
 select set_config('request.jwt.claim.sub','99999999-9999-4999-8999-999999999999',true);
 select extensions.is(public.complete_calendar_setup(
@@ -30,12 +26,6 @@ select extensions.ok((select is_displayed from public.nutrient_fields
 select extensions.is((select count(*) from public.days
   where user_id='99999999-9999-4999-8999-999999999999'),0::bigint,
   'setup creates no dated day');
-select extensions.is((select count(*) from public.weeks),(select weeks from legacy_counts),
-  'setup creates no week');
-select extensions.is((select count(*) from public.weekly_pattern_versions),(select patterns from legacy_counts),
-  'setup creates no weekly pattern');
-select extensions.is((select count(*) from public.routine_versions),(select routines from legacy_counts),
-  'setup creates no routine');
 select extensions.is(public.complete_calendar_setup(
   '99999999-9999-4999-8999-000000000001','Europe/London',null),
   (select result from public.mutation_receipts

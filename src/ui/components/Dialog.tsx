@@ -8,14 +8,20 @@ type DialogProps = {
   closeDisabled?: boolean;
   modal?: boolean;
   lightDismiss?: boolean;
+  controlledClose?: boolean;
   className?: string;
   style?: CSSProperties;
   children: ReactNode;
 };
 
-export function Dialog({ open, title, onClose, closeDisabled = false, modal = true, lightDismiss = false, className = '', style, children }: DialogProps) {
+export function Dialog({ open, title, onClose, closeDisabled = false, modal = true, lightDismiss = false, controlledClose = false, className = '', style, children }: DialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  function requestClose() {
+    if (closeDisabled) return;
+    if (controlledClose) onClose();
+    else dialogRef.current?.close();
+  }
 
   function keepTabFocusInside(event: KeyboardEvent<HTMLDialogElement>) {
     if (event.key !== 'Tab') return;
@@ -50,8 +56,10 @@ export function Dialog({ open, title, onClose, closeDisabled = false, modal = tr
   }, [open, modal]);
 
   return (
-    <dialog ref={dialogRef} className={`app-dialog ${className}`} style={style} aria-labelledby={titleId} tabIndex={-1} onClick={(event) => { if (!lightDismiss || closeDisabled || event.target !== event.currentTarget) return; const rect = event.currentTarget.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) event.currentTarget.close(); }} onKeyDown={modal ? keepTabFocusInside : undefined} onCancel={(event) => { if (closeDisabled) event.preventDefault(); }} onClose={() => { if (!closeDisabled) onClose(); }}>
-      <header className="dialog-header"><h2 id={titleId}>{title}</h2><button className="icon-button" type="button" aria-label="Close dialog" disabled={closeDisabled} onClick={() => dialogRef.current?.close()}><X size={18} /></button></header>
+    <dialog ref={dialogRef} className={`app-dialog ${className}`} style={style} aria-labelledby={titleId} tabIndex={-1} onClick={(event) => { if (!lightDismiss || closeDisabled || event.target !== event.currentTarget) return; const rect = event.currentTarget.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) requestClose(); }} onKeyDown={modal ? keepTabFocusInside : undefined} onCancel={(event) => {
+      if (closeDisabled || controlledClose) { event.preventDefault(); requestClose(); }
+    }} onClose={() => { if (!closeDisabled && !controlledClose) onClose(); }}>
+      <header className="dialog-header"><h2 id={titleId}>{title}</h2><button className="icon-button" type="button" aria-label="Close dialog" disabled={closeDisabled} onClick={requestClose}><X size={18} /></button></header>
       <div className="dialog-content">{children}</div>
     </dialog>
   );

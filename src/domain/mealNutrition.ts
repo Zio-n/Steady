@@ -16,7 +16,7 @@ export type MealNutrition = {
   canLog: boolean;
 };
 
-export type MealNutritionError = 'empty_recipe' | 'invalid_multiplier' | 'food_unavailable'
+export type MealNutritionError = 'empty_meal' | 'invalid_multiplier' | 'food_unavailable'
   | 'component_missing' | 'invalid_amount' | 'invalid_basis' | 'incompatible_unit' | 'unknown_serving_weight' | 'numeric_overflow';
 export type MealNutritionResult = { ok: true; nutrition: MealNutrition } | {
   ok: false;
@@ -24,7 +24,7 @@ export type MealNutritionResult = { ok: true; nutrition: MealNutrition } | {
   componentIndex?: number;
 };
 
-/** Sum one saved recipe without conflating unknown nutrient values with zero. */
+/** Sum one saved food group without conflating unknown nutrient values with zero. */
 export function calculateMealNutrition(
   components: MealComponentForCalculation[],
   fieldIds: string[],
@@ -33,7 +33,7 @@ export function calculateMealNutrition(
   if (!Number.isFinite(multiplier) || multiplier <= 0 || multiplier >= 100_000_000) {
     return { ok: false, error: 'invalid_multiplier' };
   }
-  if (components.length === 0) return { ok: false, error: 'empty_recipe' };
+  if (components.length === 0) return { ok: false, error: 'empty_meal' };
 
   const calorieValues: Array<number | null> = [];
   const nutrientValues = new Map(fieldIds.map((fieldId) => [fieldId, [] as Array<number | null>]));

@@ -13,10 +13,5 @@ export const queryKeys = {
   mealLibrary: (userId: string, search: string) => ['account', userId, 'meal-library', search] as const,
   day: (userId: string, localDate: string) => ['account', userId, 'day', localDate] as const,
   calendarRange: (userId: string, fromDate: string, toDate: string) => ['account', userId, 'calendar-range', fromDate, toDate] as const,
-  shuffleSuggestion: (userId: string, localDate: string, itemId: string) => ['account', userId, 'shuffle-suggestion', localDate, itemId] as const,
   recentChoices: (userId: string) => ['account', userId, 'recent-choices'] as const,
-  meals: (userId: string, day: string) => ['account', userId, 'meals', day] as const,
-  routine: (userId: string, effectiveFrom: string) => ['account', userId, 'routine', effectiveFrom] as const,
-  weeklyPlan: (userId: string, weekStart: string) => ['account', userId, 'weekly-plan', weekStart] as const,
-  carryDecisions: (userId: string, weekStart: string, sourceDate: string) => ['account', userId, 'weekly-plan', weekStart, 'carry-decision', sourceDate] as const,
 };

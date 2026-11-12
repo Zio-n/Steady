@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select extensions.plan(25);
+select extensions.plan(24);
 
 insert into auth.users (id,aud,role,email,encrypted_password,email_confirmed_at)
 values
@@ -43,22 +43,21 @@ select extensions.throws_ok(
 );
 select extensions.is(
   public.save_meal('dddddddd-dddd-4ddd-8ddd-dddddddddddd','B breakfast','["breakfast"]'::jsonb,
-    '[{"food_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","amount":100,"unit":"g"}]'::jsonb,null,null,450)->>'revision',
+    '[{"food_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","amount":100,"unit":"g"}]'::jsonb,null,null)->>'revision',
   '1','authenticated owner saves meal and same-owner components atomically'
 );
 select extensions.is(
   public.save_meal('dddddddd-dddd-4ddd-8ddd-dddddddddddd','B breakfast','["breakfast"]'::jsonb,
-    '[{"food_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","amount":100,"unit":"g"}]'::jsonb,null,null,450)->>'revision',
+    '[{"food_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","amount":100,"unit":"g"}]'::jsonb,null,null)->>'revision',
   '1','retry returns the original committed result'
 );
 select extensions.is((select count(*) from public.meals where user_id = '22222222-2222-4222-8222-222222222222'),1::bigint,'idempotent retry does not create a duplicate meal');
 select extensions.is(
   public.save_meal('ffffffff-ffff-4fff-8fff-ffffffffffff','B breakfast edited','["breakfast"]'::jsonb,
     '[{"food_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","amount":120,"unit":"g"}]'::jsonb,
-    (select id from public.meals where user_id = '22222222-2222-4222-8222-222222222222' and name = 'B breakfast'),1,500)->>'revision',
+    (select id from public.meals where user_id = '22222222-2222-4222-8222-222222222222' and name = 'B breakfast'),1)->>'revision',
   '2','matching expected revision updates meal and component rows atomically'
 );
-select extensions.is((select declared_total_weight_g from public.meals where user_id='22222222-2222-4222-8222-222222222222' and name='B breakfast edited'),500::numeric,'declared whole-recipe weight persists on edit');
 select extensions.throws_ok(
   $$select public.save_meal('a9999999-9999-4999-8999-999999999999','No section','[]'::jsonb,'[{"food_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","amount":100,"unit":"g"}]'::jsonb)$$,
   '22023',null,'saved meals require at least one section tag'
@@ -76,18 +75,18 @@ select extensions.throws_ok(
   '22023',null,'incompatible component units are rejected by the database'
 );
 select extensions.throws_ok(
-  $$select public.save_meal('c9999999-9999-4999-8999-999999999999','Atomic failure','["lunch"]'::jsonb,'[{"food_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","amount":100,"unit":"g"}]'::jsonb,(select id from public.meals where user_id='22222222-2222-4222-8222-222222222222' and name='B breakfast edited'),2,700)$$,
-  '23503',null,'an unavailable component fails the full recipe edit'
+  $$select public.save_meal('c9999999-9999-4999-8999-999999999999','Atomic failure','["lunch"]'::jsonb,'[{"food_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","amount":100,"unit":"g"}]'::jsonb,(select id from public.meals where user_id='22222222-2222-4222-8222-222222222222' and name='B breakfast edited'),2)$$,
+  '23503',null,'an unavailable component fails the full meal edit'
 );
 select extensions.is(
-  (select jsonb_build_object('name',meal.name,'revision',meal.revision,'weight',meal.declared_total_weight_g,'amount',component.amount)
+  (select jsonb_build_object('name',meal.name,'revision',meal.revision,'amount',component.amount)
    from public.meals meal join public.meal_components component on component.user_id=meal.user_id and component.meal_id=meal.id
    where meal.user_id='22222222-2222-4222-8222-222222222222' and meal.name='B breakfast edited'),
-  '{"name":"B breakfast edited","revision":2,"weight":500,"amount":120}'::jsonb,
-  'failed component edit rolls back parent values and preserves the previous recipe rows'
+  '{"name":"B breakfast edited","revision":2,"amount":120}'::jsonb,
+  'failed component edit rolls back parent values and preserves the previous food-group rows'
 );
 select extensions.throws_ok(
-  $$select public.save_meal('99999999-9999-4999-8999-999999999999','Stale edit','["breakfast"]'::jsonb,'[{"food_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","amount":100,"unit":"g"}]'::jsonb,(select id from public.meals where user_id = '22222222-2222-4222-8222-222222222222' and name = 'B breakfast edited'),1,null)$$,
+  $$select public.save_meal('99999999-9999-4999-8999-999999999999','Stale edit','["breakfast"]'::jsonb,'[{"food_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","amount":100,"unit":"g"}]'::jsonb,(select id from public.meals where user_id = '22222222-2222-4222-8222-222222222222' and name = 'B breakfast edited'),1)$$,
   '40001',null,'stale meal revision is rejected rather than overwritten'
 );
 select extensions.throws_ok(

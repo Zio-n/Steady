@@ -43,7 +43,7 @@ export function CalendarSetupPage() {
   if (status === 'unconfigured') return <main className="signin-page"><section className="signin-card"><p className="eyebrow">YOUR CALENDAR</p><h1>Start with a meal.</h1><StatusMessage>Connect the local Supabase project before saving your account setup.</StatusMessage></section></main>;
   if (profile.isPending) return <main className="signin-page"><LoadingSkeleton label="Loading your profile" /></main>;
   if (profile.isError) return <main className="signin-page page-stack"><StatusMessage tone="error">We couldn’t check your profile. Your data is safe; try again.</StatusMessage><Button variant="secondary" type="button" onClick={() => void profile.refetch()}>Try again</Button></main>;
-  if (profile.data?.profile.onboarding_complete) return <Navigate to="/" replace />;
+  if (profile.data?.profile.onboarding_complete) return <Navigate to={save.isPending ? '/?start=meal' : '/'} replace />;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

@@ -1,7 +1,8 @@
+-- Optional catalogue seeds: a fresh install may not have imported these foods.
 -- Reviewed staple-food matches for breakfast, pasta, rice, fish, and vegetable recipes.
 insert into public.ingredient_cost_catalog_matches
   (source_id, source_record_id, ingredient_key, match_quality, match_rationale)
-values
+select candidate.* from (values
   ('usda_fndds','2707152','eggs_free_range','approximate','Raw whole eggs are the generic nutrition form for the ONS free-range egg price; production method is not represented in the generic food record.'),
   ('usda_fndds','2708489','oats','direct','Raw oats match the ONS oats or porridge ingredient category.'),
   ('cofid_2021','11-857','basmati_rice','direct','Raw white basmati rice matches the ONS basmati or jasmine rice item.'),
@@ -14,6 +15,11 @@ values
   ('usda_fndds','2709285','frozen_fruit','approximate','Frozen strawberries are one fruit covered by the ONS frozen fruit category.'),
   ('usda_foundation','2257046','oat_milk','approximate','Unsweetened refrigerated oat milk is a close form for the ONS oat milk item; sweetened and shelf-stable products may differ.'),
   ('cofid_2021','13-489','potatoes_white','approximate','Raw old white potatoes are a close form for the ONS white potato item; variety and purchase preparation differ.')
+) as candidate(source_id, source_record_id, ingredient_key, match_quality, match_rationale)
+where exists (
+  select 1 from public.catalog_foods f
+  where f.source_id = candidate.source_id and f.source_record_id = candidate.source_record_id
+)
 on conflict (source_id, source_record_id) do update set
   ingredient_key = excluded.ingredient_key,
   match_quality = excluded.match_quality,

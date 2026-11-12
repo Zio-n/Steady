@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select extensions.plan(20);
+select extensions.plan(15);
 
 insert into auth.users (id,aud,role,email,encrypted_password,email_confirmed_at)
 values
@@ -15,9 +15,6 @@ values
   ('77777777-7777-4777-8777-000000000001','77777777-7777-4777-8777-777777777777','Owner food',100,'g',150),
   ('88888888-8888-4888-8888-000000000001','88888888-8888-4888-8888-888888888888','Other food',100,'g',200);
 
-create temp table legacy_counts as select
-  (select count(*) from public.weeks) as weeks,
-  (select count(*) from public.routine_versions) as routines;
 select set_config('request.jwt.claim.sub','77777777-7777-4777-8777-777777777777',true);
 
 select extensions.is((public.calendar_plan_day_item(
@@ -26,14 +23,8 @@ select extensions.is((public.calendar_plan_day_item(
   1::bigint,'a targetless selected date accepts a saved-food plan');
 select extensions.is((select count(*) from public.days where user_id='77777777-7777-4777-8777-777777777777'),
   1::bigint,'planning creates one dated day');
-select extensions.is((select week_start from public.days where user_id='77777777-7777-4777-8777-777777777777'),
-  null::date,'planned calendar day is not linked to a week');
 select extensions.is((select base_planned_target_kcal from public.days where user_id='77777777-7777-4777-8777-777777777777'),
   null::numeric,'planned calendar day does not invent a target');
-select extensions.is((select count(*) from public.weeks),(select weeks from legacy_counts),
-  'planning does not materialise a week');
-select extensions.is((select count(*) from public.routine_versions),(select routines from legacy_counts),
-  'planning does not materialise a routine');
 select extensions.is((select state::text from public.day_items where user_id='77777777-7777-4777-8777-777777777777'),
   'planned','the new entry remains planned');
 select extensions.is((select count(*) from public.day_items where user_id='77777777-7777-4777-8777-777777777777' and state='eaten'),
@@ -74,10 +65,6 @@ select extensions.is((public.calendar_log_day_item(
   'repeating a log request returns the original result');
 select extensions.is((select count(*) from public.day_items where user_id='77777777-7777-4777-8777-777777777777'),
   1::bigint,'repeating a log does not create a second entry');
-select extensions.is((select count(*) from public.weeks),(select weeks from legacy_counts),
-  'logging does not materialise a week');
-select extensions.is((select count(*) from public.routine_versions),(select routines from legacy_counts),
-  'logging does not materialise a routine');
 select extensions.ok(not has_function_privilege('anon',
   'public.calendar_log_day_item(uuid,date,public.meal_section,text,uuid,numeric,text,jsonb,uuid,integer)','EXECUTE'),
   'anonymous clients cannot log a calendar item');

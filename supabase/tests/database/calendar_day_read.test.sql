@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select extensions.plan(15);
+select extensions.plan(14);
 
 insert into auth.users (id,aud,role,email,encrypted_password,email_confirmed_at)
 values
@@ -31,22 +31,17 @@ select extensions.is(public.read_calendar_day('2026-10-27')->>'day',
 select extensions.is(jsonb_array_length(public.read_calendar_day('2026-10-27')->'items'),
   0,'an empty date has no entries');
 select extensions.is((select count(*) from public.days),0::bigint,'reading did not insert a day');
-select extensions.is((select count(*) from public.weeks),0::bigint,'reading did not insert a week');
 select extensions.is((select count(*) from public.day_items),0::bigint,'reading did not generate routine entries');
 
 reset role;
-insert into public.weeks (user_id,week_start,budget_kcal)
-values
-  ('33333333-3333-4333-8333-333333333333','2026-10-12',14700),
-  ('44444444-4444-4444-8444-444444444444','2026-10-12',12600);
 insert into public.days (
-  user_id,local_date,week_start,base_planned_target_kcal,nutrient_target_snapshot,
+  user_id,local_date,base_planned_target_kcal,nutrient_target_snapshot,
   status,completed_target_kcal,completed_at,completed_log_revision,completed_actual_kcal
 )
 values
-  ('33333333-3333-4333-8333-333333333333','2026-10-15','2026-10-12',2100,
+  ('33333333-3333-4333-8333-333333333333','2026-10-15',2100,
    '{"targets":{"protein":110},"fields":{}}','completed',2050,now(),1,100),
-  ('44444444-4444-4444-8444-444444444444','2026-10-15','2026-10-12',1800,
+  ('44444444-4444-4444-8444-444444444444','2026-10-15',1800,
    '{}'::jsonb,'open',null,null,null,null);
 insert into public.day_items (user_id,local_date,section,state,source,planned_payload)
 values

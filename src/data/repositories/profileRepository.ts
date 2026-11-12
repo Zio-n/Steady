@@ -6,15 +6,10 @@ import { savedNutrientMatches } from '../../domain/nutrientCreate';
 export type Profile = Tables<'profiles'>;
 export type NutrientField = Tables<'nutrient_fields'>;
 export type ProfileTargetVersion = Tables<'profile_target_versions'>;
-export type WeeklyPattern = {
-  version: Tables<'weekly_pattern_versions'>;
-  days: Tables<'weekly_pattern_days'>[];
-};
 export type ProfileBundle = {
   profile: Profile;
   nutrientFields: NutrientField[];
   targetVersions: ProfileTargetVersion[];
-  weeklyPatterns: WeeklyPattern[];
 };
 
 export async function loadProfile(userId: string): Promise<ProfileBundle | null> {
@@ -32,29 +27,8 @@ export async function loadProfile(userId: string): Promise<ProfileBundle | null>
   const { data: targets, error: targetError } = await supabase.from('profile_target_versions')
     .select('*').eq('user_id', userId).order('effective_from', { ascending: true });
   if (targetError) throw toDataError(targetError);
-  const { data: versions, error: patternError } = await supabase.from('weekly_pattern_versions')
-    .select('*').eq('user_id', userId).order('effective_week_start', { ascending: true });
-  if (patternError) throw toDataError(patternError);
-  const patternIds = versions.map((version) => version.id);
-  const daysResult = patternIds.length
-    ? await supabase.from('weekly_pattern_days').select('*').eq('user_id', userId).in('pattern_version_id', patternIds)
-    : { data: [], error: null };
-  if (daysResult.error) throw toDataError(daysResult.error);
-  const weeklyPatterns = versions.map((version) => ({
-    version,
-    days: daysResult.data.filter((day) => day.pattern_version_id === version.id)
-      .sort((left, right) => left.weekday - right.weekday),
-  }));
-  return { profile: profileResult.data, nutrientFields: fieldsResult.data, targetVersions: targets, weeklyPatterns };
+  return { profile: profileResult.data, nutrientFields: fieldsResult.data, targetVersions: targets };
 }
-
-export type CompleteOnboardingInput = {
-  requestId: string;
-  timezone: string;
-  baseDailyTargetKcal: number;
-  displayedFields: string[];
-  nutrientTargets: Record<string, number>;
-};
 
 export async function completeCalendarSetup(input: { requestId: string; timezone: string; targetKcal: number | null }) {
   if (!supabase) throw new DataError('Connect Supabase before saving your profile.', 'configuration');
@@ -79,19 +53,6 @@ export async function saveCalendarTargets(input: {
     p_request_id: input.requestId,
     p_effective_from: input.effectiveFrom,
     p_base_daily_target_kcal: input.baseDailyTargetKcal as number,
-    p_nutrient_targets: input.nutrientTargets as unknown as Json,
-  });
-  if (error) throw toDataError(error);
-  return data;
-}
-
-export async function completeProfileOnboarding(input: CompleteOnboardingInput) {
-  if (!supabase) throw new DataError('Connect Supabase before saving your profile.', 'configuration');
-  const { data, error } = await supabase.rpc('complete_profile_onboarding', {
-    p_request_id: input.requestId,
-    p_timezone: input.timezone,
-    p_base_daily_target_kcal: input.baseDailyTargetKcal,
-    p_displayed_fields: input.displayedFields as unknown as Json,
     p_nutrient_targets: input.nutrientTargets as unknown as Json,
   });
   if (error) throw toDataError(error);
@@ -144,25 +105,4 @@ export async function reorderNutrientFields(fieldIds: string[]) {
     p_ordered_field_ids: fieldIds as unknown as Json,
   });
   if (error) throw toDataError(error);
-}
-
-export type SaveProfileTargetsInput = {
-  requestId: string;
-  expectedRevision: number;
-  baseDailyTargetKcal: number;
-  nutrientTargets: Record<string, number>;
-  allocationStrategy: 'proportional' | 'equal' | null;
-};
-
-export async function saveProfileTargets(input: SaveProfileTargetsInput) {
-  if (!supabase) throw new DataError('Connect Supabase before saving target changes.', 'configuration');
-  const { data, error } = await supabase.rpc('save_profile_targets', {
-    p_request_id: input.requestId,
-    p_expected_revision: input.expectedRevision,
-    p_base_daily_target_kcal: input.baseDailyTargetKcal,
-    p_nutrient_targets: input.nutrientTargets as unknown as Json,
-    p_allocation_strategy: input.allocationStrategy ?? undefined,
-  });
-  if (error) throw toDataError(error);
-  return data;
 }

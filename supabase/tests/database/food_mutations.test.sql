@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select extensions.plan(25);
+select extensions.plan(24);
 
 insert into auth.users (id,aud,role,email,encrypted_password,email_confirmed_at)
 values
@@ -56,11 +56,6 @@ insert into pg_temp.food_test_ids(label,id)
   select 'meal',(public.save_meal('e1111111-1111-4111-8111-111111111111','Oats bowl','["breakfast"]'::jsonb,
     jsonb_build_array(jsonb_build_object('food_id',(select id from public.foods where user_id = '61111111-1111-4111-8111-111111111111' and name = 'Rolled oats'),'amount',40,'unit','g')))->>'id')::uuid;
 reset role;
-insert into public.routine_versions(id,user_id,effective_from)
-  values ('71111111-1111-4111-8111-111111111111','61111111-1111-4111-8111-111111111111','2026-10-05');
-insert into public.routine_slots(user_id,routine_version_id,slot_id,weekday,section,mode,meal_id)
-  select '61111111-1111-4111-8111-111111111111','71111111-1111-4111-8111-111111111111','breakfast',1,'breakfast','fixed',id
-  from pg_temp.food_test_ids where label = 'meal';
 set local role authenticated;
 select extensions.throws_ok(
   $$select public.delete_food('f1111111-1111-4111-8111-111111111111',(select id from public.foods where user_id = '61111111-1111-4111-8111-111111111111' and name = 'Rolled oats'),2)$$,
@@ -81,10 +76,6 @@ select extensions.is(
 select extensions.is(
   (select count(*) from public.meal_components where user_id = '61111111-1111-4111-8111-111111111111' and food_id = (select id from public.foods where user_id = '61111111-1111-4111-8111-111111111111' and name = 'Rolled oats')),
   1::bigint,'archiving preserves the saved meal reference'
-);
-select extensions.is(
-  (select count(*) from public.routine_slots where user_id = '61111111-1111-4111-8111-111111111111' and meal_id = (select id from pg_temp.food_test_ids where label = 'meal')),
-  1::bigint,'archiving preserves the scheduled routine reference to the saved meal'
 );
 insert into pg_temp.food_test_ids(label,id)
   select 'unused',(public.save_food('11111111-1111-4111-8111-111111111111',null,null,'Unused tea',null,250,'ml',null,250,'ml',0,'{}'::jsonb)->>'id')::uuid;
