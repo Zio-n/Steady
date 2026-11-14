@@ -14,4 +14,5 @@ export const queryKeys = {
   day: (userId: string, localDate: string) => ['account', userId, 'day', localDate] as const,
   calendarRange: (userId: string, fromDate: string, toDate: string) => ['account', userId, 'calendar-range', fromDate, toDate] as const,
   recentChoices: (userId: string) => ['account', userId, 'recent-choices'] as const,
+  recentMeals: (userId: string) => ['account', userId, 'recent-meals'] as const,
 };

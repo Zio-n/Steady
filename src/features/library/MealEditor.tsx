@@ -140,7 +140,7 @@ export function MealEditor({ meal, foods, fields, userId, requestKey, onSaved, o
   }
 
   return <section className="meal-builder-page" aria-labelledby={`${requestKey}-heading`}>
-    <div className="meal-builder-header"><button className="meal-builder-back" type="button" onClick={onCancel}><ArrowLeft size={19} /> Back</button><div><p className="eyebrow">YOUR KITCHEN</p><h1 id={`${requestKey}-heading`}>{meal ? 'Edit meal' : 'Build a meal'}</h1><p>Try a combination, see the nutrition, then keep it in your Library.</p></div></div>
+    <div className="meal-builder-header"><button className="meal-builder-back" type="button" onClick={onCancel}><ArrowLeft size={19} /> Back</button><h1 id={`${requestKey}-heading`}>{meal ? 'Edit saved meal' : 'New saved meal'}</h1></div>
     {error && <div className="meal-builder-alert"><StatusMessage tone="error">{error}</StatusMessage></div>}
     <div className="meal-builder-grid">
       <section className="meal-builder-source" aria-labelledby="builder-foods-title">

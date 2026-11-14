@@ -27,8 +27,8 @@ function draftFromFood(food: FoodWithNutrients | null, fields: NutrientField[]):
     basisAmount: String(food?.food.basis_amount ?? 100),
     basisUnit: food?.food.basis_unit ?? 'g',
     gramsPerServing: food?.food.grams_per_serving == null ? '' : String(food.food.grams_per_serving),
-    defaultPortionAmount: String(food?.food.default_portion_amount ?? 1),
-    defaultPortionUnit: food?.food.default_portion_unit ?? 'serving',
+    defaultPortionAmount: String(food?.food.default_portion_amount ?? 100),
+    defaultPortionUnit: food?.food.default_portion_unit ?? 'g',
     caloriesKcal: food?.food.calories_kcal == null ? '' : String(food.food.calories_kcal),
     nutrients: Object.fromEntries(fields.map((field) => [field.field_id,
       food?.nutrients[field.field_id] == null ? '' : String(food.nutrients[field.field_id]),
@@ -66,7 +66,9 @@ export function FoodEditor({
   const [draft, setDraft] = useState(() => draftFromFood(food, fields));
   const [error, setError] = useState('');
   const requestRef = useRef<{ signature: string; id: string } | null>(null);
-  const saveMutation = useMutation({ mutationFn: saveFood, onSuccess: onSaved, onError: () => setError('We couldn’t save that food. Your library is unchanged; refresh and try again.') });
+  const saveMutation = useMutation({ mutationFn: saveFood, onSuccess: onSaved, onError: (error) => setError(error.message) });
+  const displayedFields = fields.filter((field) => field.is_displayed);
+  const otherFields = fields.filter((field) => !field.is_displayed);
   const previewBasis = parsePositive(draft.basisAmount);
   const previewGramsPerServing = draft.gramsPerServing.trim() ? parsePositive(draft.gramsPerServing) : null;
   const previewCalories = parseOptionalNonNegative(draft.caloriesKcal, 'calorie');
@@ -88,6 +90,15 @@ export function FoodEditor({
   function setField<K extends keyof Omit<Draft, 'nutrients'>>(key: K, value: Draft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
     setError('');
+  }
+
+  function nutrientField(field: NutrientField) {
+    return <NumericField key={field.field_id} id={`${requestKey}-nutrient-${field.field_id}`}
+      label={`${field.name} (${field.unit})`} min={0} max={NUTRIENT_MAX} step={NUTRIENT_STEP}
+      value={draft.nutrients[field.field_id] ?? ''} onChange={(event) => {
+        setDraft((current) => ({ ...current, nutrients: { ...current.nutrients, [field.field_id]: event.target.value } }));
+        setError('');
+      }} />;
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -159,30 +170,29 @@ export function FoodEditor({
           </Field>
           <NumericField id={`${requestKey}-grams-per-serving`} label="Grams per serving" min={QUANTITY_MIN} max={QUANTITY_MAX} step={QUANTITY_STEP} value={draft.gramsPerServing} onChange={(event) => setField('gramsPerServing', event.target.value)} />
         </div>
-        <p className="field-hint">Values below describe the nutrient basis amount. Grams per serving is only used when the serving weight is known.</p>
-
         <div className="food-nutrient-fields">
           <h3>Nutrients per {draft.basisAmount || 'basis amount'} {draft.basisUnit.trim() || 'unit'}</h3>
           <NumericField id={`${requestKey}-calories`} label="Calories (kcal)" min={0} max={CALORIE_MAX} step={CALORIE_STEP} value={draft.caloriesKcal} onChange={(event) => setField('caloriesKcal', event.target.value)} />
-          {!draft.caloriesKcal.trim() && <p className="field-hint">Leave blank if unknown. This food cannot be logged until its calories are known.</p>}
-          {fields.map((field) => (
-            <NumericField key={field.field_id} id={`${requestKey}-nutrient-${field.field_id}`} label={`${field.name} (${field.unit})`} min={0} max={NUTRIENT_MAX} step={NUTRIENT_STEP} value={draft.nutrients[field.field_id] ?? ''} onChange={(event) => setDraft((current) => ({ ...current, nutrients: { ...current.nutrients, [field.field_id]: event.target.value } }))} />
-          ))}
-          {fields.length === 0 && <p className="field-hint">Add nutrient definitions in Profile to record more food values.</p>}
+          {!draft.caloriesKcal.trim() && <p className="field-hint">Calories are required to log this food.</p>}
+          {displayedFields.map(nutrientField)}
+          {otherFields.length > 0 && <details className="food-more-nutrients">
+            <summary>More nutrients</summary>
+            {otherFields.map(nutrientField)}
+          </details>}
         </div>
         <section className="food-portion-preview" aria-live="polite" aria-labelledby={`${requestKey}-preview-heading`}>
-          <div><p className="eyebrow">PORTION CHECK</p><h3 id={`${requestKey}-preview-heading`}>Default portion: {draft.defaultPortionAmount || '—'} {draft.defaultPortionUnit || 'unit'}</h3></div>
+          <h3 id={`${requestKey}-preview-heading`}>Default portion: {draft.defaultPortionAmount || '—'} {draft.defaultPortionUnit || 'unit'}</h3>
           {!portionPreview && <p className="field-hint">Enter a valid positive amount, basis amount and unit to preview this portion.</p>}
           {portionPreview && !portionPreview.ok && <p className="field-hint">{portionPreview.reason === 'unknown_serving_weight' ? 'Cannot convert a serving to grams until grams per serving is known.' : portionPreview.reason === 'incompatible_unit' ? 'These units are not directly convertible. Use matching units or a serving with a known gram weight.' : 'Enter a valid positive amount to preview this portion.'}</p>}
           {portionPreview?.ok && (
             <dl className="food-portion-values">
               <div><dt>Calories</dt><dd>{portionPreview.caloriesKcal === null ? 'Unknown · cannot log yet' : `${portionPreview.caloriesKcal.toLocaleString(undefined, { maximumFractionDigits: 3 })} kcal`}</dd></div>
-              {fields.map((field) => <div key={field.field_id}><dt>{field.name}</dt><dd>{portionPreview.nutrients[field.field_id] === null ? `Unknown ${field.unit}` : `${portionPreview.nutrients[field.field_id]?.toLocaleString(undefined, { maximumFractionDigits: 3 })} ${field.unit}`}</dd></div>)}
+              {displayedFields.map((field) => <div key={field.field_id}><dt>{field.name}</dt><dd>{portionPreview.nutrients[field.field_id] === null ? '—' : `${portionPreview.nutrients[field.field_id]?.toLocaleString(undefined, { maximumFractionDigits: 3 })} ${field.unit}`}</dd></div>)}
             </dl>
           )}
         </section>
         <div className="dialog-actions food-editor-actions">
-          <Button variant="secondary" type="button" onClick={onCancel}>Cancel</Button>
+          <Button variant="secondary" type="button" disabled={saveMutation.isPending} onClick={onCancel}>Cancel</Button>
           <Button type="submit" disabled={saveMutation.isPending}>{saveMutation.isPending ? 'Saving food…' : food ? 'Save food' : 'Add food'}</Button>
         </div>
       </form>

@@ -4,7 +4,6 @@ import { useLocation } from 'react-router-dom';
 const pageNames: Record<string, string> = {
   '/': 'Today',
   '/library': 'Library',
-  '/build': 'Build a meal',
   '/settings': 'Settings',
   '/profile': 'Profile',
   '/onboarding': 'Set up Steady',
@@ -13,8 +12,10 @@ const pageNames: Record<string, string> = {
 
 /** Announce client-side navigation without moving focus away from the control used. */
 export function RouteAnnouncement() {
-  const { pathname } = useLocation();
-  const pageName = pageNames[pathname] ?? 'Today';
+  const { pathname, search } = useLocation();
+  const pageName = pathname === '/build'
+    ? new URLSearchParams(search).get('edit') ? 'Edit saved meal' : 'New saved meal'
+    : pageNames[pathname] ?? 'Today';
 
   useEffect(() => { document.title = `${pageName} — Steady`; }, [pageName]);
 

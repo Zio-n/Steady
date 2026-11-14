@@ -1,19 +1,24 @@
 import { useEffect, useState, type KeyboardEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useInfiniteQuery, useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookOpen, Plus, Search, Trash2 } from 'lucide-react';
 import { useAuth } from '../../app/AuthProvider';
 import { archiveFood, deleteFood, loadFoodLibrary, loadFoodReferences, type FoodWithNutrients } from '../../data/repositories/foodRepository';
-import { loadMeals } from '../../data/repositories/mealRepository';
+import { LibraryMeals } from '../../features/library/LibraryMeals';
 import { queryKeys } from '../../data/queryKeys';
 import { useProfile } from '../../features/profile/useProfile';
 import { FoodEditor } from '../../features/library/FoodEditor';
+import { CALORIES, formatNutrition, valueCertainty } from '../../domain/mealComposer';
+import { libraryDraft } from '../../features/today/composerFoods';
+import { loadFoodPortionPreferences } from '../../data/repositories/foodPortionPreferenceRepository';
 import { Button } from '../components/Button';
 import { Dialog } from '../components/Dialog';
 import { EmptyState } from '../components/EmptyState';
 import { LoadingSkeleton } from '../components/LoadingSkeleton';
 import { StatusMessage } from '../components/StatusMessage';
 import { UnsavedChangesPrompt } from '../components/UnsavedChangesPrompt';
+
+const formatPortion = new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 });
 
 export function LibraryPage() {
   const { session } = useAuth();
@@ -23,10 +28,13 @@ export function LibraryPage() {
   const queryClient = useQueryClient();
   const activeWrites = useIsMutating();
   const [search, setSearch] = useState('');
-  const [view, setView] = useState<'foods' | 'meals'>(() => new URLSearchParams(window.location.search).get('view') === 'meals' ? 'meals' : 'foods');
+  const [params, setParams] = useSearchParams();
+  const view = params.get('view') === 'meals' ? 'meals' : 'foods';
+  const mealView = params.get('list') === 'saved' || params.has('saved') ? 'saved' : 'recent';
   const [pendingView, setPendingView] = useState<'foods' | 'meals' | null>(null);
   const [sort, setSort] = useState<'name' | 'recent'>('name');
   const [editing, setEditing] = useState<FoodWithNutrients | null>(null);
+  const [mealDraftDirty, setMealDraftDirty] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<FoodWithNutrients | null>(null);
   const [pageNotice, setPageNotice] = useState('');
@@ -37,16 +45,16 @@ export function LibraryPage() {
     queryFn: ({ pageParam }) => loadFoodLibrary(userId!, normalizedSearch, pageParam, 20, sort),
     initialPageParam: 0,
     getNextPageParam: (lastPage, pages) => lastPage.hasMore ? pages.length * 20 : undefined,
-    enabled: Boolean(userId),
+    enabled: Boolean(userId && view === 'foods'),
   });
-  const meals = useQuery({
-    queryKey: userId ? queryKeys.mealLibrary(userId, normalizedSearch) : ['meals', 'signed-out'],
-    queryFn: () => loadMeals(userId!, normalizedSearch),
-    enabled: Boolean(userId && view === 'meals'),
+  const portions = useQuery({
+    queryKey: userId ? queryKeys.foodPortionPreferences(userId) : ['food-portions', 'signed-out'],
+    queryFn: () => loadFoodPortionPreferences(userId!),
+    enabled: Boolean(userId && view === 'foods'),
   });
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('create') === '1') navigate('/build?from=library', { replace: true });
-  }, [navigate]);
+    if (params.get('create') === '1') navigate('/library?view=meals&list=saved', { replace: true });
+  }, [navigate, params]);
   const foodReferences = useQuery({
     queryKey: deleteCandidate && userId ? queryKeys.foodReferences(userId, deleteCandidate.food.id) : ['food-references', 'closed'],
     queryFn: () => loadFoodReferences(userId!, deleteCandidate!.food.id),
@@ -57,8 +65,8 @@ export function LibraryPage() {
     onSuccess: async () => {
       setDeleteCandidate(null);
       setPageError('');
-      setPageNotice('Food deleted. Saved meals that use a food are protected from deletion.');
-      if (userId) await queryClient.invalidateQueries({ queryKey: queryKeys.foods(userId) });
+      setPageNotice('Food deleted.');
+      if (userId) await refreshFoods(userId);
     },
     onError: (error) => setPageError(error instanceof Error ? error.message : 'We couldn’t delete that food. Refresh and try again.'),
   });
@@ -67,18 +75,27 @@ export function LibraryPage() {
     onSuccess: async () => {
       setDeleteCandidate(null);
       setPageError('');
-      setPageNotice('Food archived from your library. Saved meal references are preserved.');
-      if (userId) await queryClient.invalidateQueries({ queryKey: queryKeys.foods(userId) });
+      setPageNotice('Food archived.');
+      if (userId) await refreshFoods(userId);
     },
     onError: (error) => setPageError(error instanceof Error ? error.message : 'We couldn’t archive that food. Refresh and try again.'),
   });
+
+  function refreshFoods(accountId: string) {
+    return Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.foods(accountId) }),
+      queryClient.invalidateQueries({ queryKey: ['account', accountId, 'meal-library'] }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.recentChoices(accountId) }),
+      queryClient.invalidateQueries({ queryKey: ['account', accountId, 'food-references'] }),
+    ]);
+  }
 
   function handleSaved() {
     setEditing(null);
     setIsCreating(false);
     setPageError('');
-    setPageNotice('Food saved to your library.');
-    if (userId) void queryClient.invalidateQueries({ queryKey: queryKeys.foods(userId) });
+    setPageNotice('Food saved.');
+    if (userId) void refreshFoods(userId);
   }
 
   function confirmRemoval() {
@@ -93,7 +110,7 @@ export function LibraryPage() {
   const hasOpenEditor = isCreating || Boolean(editing);
 
   function switchView(next: 'foods' | 'meals') {
-    setView(next);
+    setParams(next === 'meals' ? { view: 'meals' } : {});
     setSearch('');
     setPageError('');
     setPendingView(null);
@@ -122,8 +139,11 @@ export function LibraryPage() {
 
   return (
     <section className="page-stack library-page">
-      <UnsavedChangesPrompt isDirty={hasOpenEditor || activeWrites > 0} />
-      <div className="library-heading"><div><p className="eyebrow">YOUR FOODS, YOUR WAY</p><h1>Library</h1></div>{view === 'foods' ? <Button type="button" onClick={() => { setPageNotice(''); setPageError(''); setEditing(null); setIsCreating(true); }}><Plus size={17} /> Add food</Button> : <Link className="primary-button" to="/build?from=library"><Plus size={17} /> Build a meal</Link>}</div>
+      <UnsavedChangesPrompt isDirty={hasOpenEditor || mealDraftDirty || activeWrites > 0} />
+      <div className="library-heading">
+        <h1>Library</h1>
+        {view === 'foods' && <Button type="button" onClick={() => { setPageNotice(''); setPageError(''); setEditing(null); setIsCreating(true); }}><Plus size={17} aria-hidden="true" /> Add food</Button>}
+      </div>
       <div className="library-view-tabs" role="tablist" aria-label="Library type">
         <button id="library-foods-tab" type="button" role="tab" aria-controls="library-panel" aria-selected={view === 'foods'} tabIndex={view === 'foods' ? 0 : -1} onClick={() => requestView('foods')} onKeyDown={handleTabKeyDown}>Foods</button>
         <button id="library-meals-tab" type="button" role="tab" aria-controls="library-panel" aria-selected={view === 'meals'} tabIndex={view === 'meals' ? 0 : -1} onClick={() => requestView('meals')} onKeyDown={handleTabKeyDown}>Meals</button>
@@ -132,7 +152,7 @@ export function LibraryPage() {
       <label className="library-search" role="search">
         <Search size={18} aria-hidden="true" />
         <span className="visually-hidden">Search {view}</span>
-        <input type="search" value={search} placeholder={view === 'foods' ? 'Search foods and brands' : 'Search saved meals'} onChange={(event) => setSearch(event.target.value)} />
+        <input type="search" value={search} placeholder={view === 'foods' ? 'Search foods and brands' : 'Search meals'} onChange={(event) => setSearch(event.target.value)} />
       </label>
       {view === 'foods' ? <>
       <div className="library-controls"><span>{search ? 'Matching foods' : 'Saved foods'}</span><label>Sort <select className="text-field" value={sort} onChange={(event) => setSort(event.target.value as 'name' | 'recent')}><option value="name">Name</option><option value="recent">Recently added</option></select></label></div>
@@ -149,33 +169,33 @@ export function LibraryPage() {
         </EmptyState>
       ) : (
         <ul className="food-list" aria-label="Saved foods">
-          {foods.data.pages.flatMap((page) => page.entries).map((entry) => (
+          {foods.data.pages.flatMap((page) => page.entries).map((entry) => {
+            const remembered = portions.data?.[`library:${entry.food.id}`];
+            const basis = libraryDraft(entry, { amount: String(entry.food.basis_amount), unit: entry.food.basis_unit });
+            const estimated = valueCertainty(basis, CALORIES) === 'estimated';
+            return (
             <li className="food-card" key={entry.food.id}>
               <div className="food-card-main">
                 <div><h2>{entry.food.name}</h2>{entry.food.brand && <p className="food-brand">{entry.food.brand}</p>}</div>
-                <p className="food-basis">Per {entry.food.basis_amount.toLocaleString()} {entry.food.basis_unit}<span>{entry.food.calories_kcal == null ? 'Calories unknown' : `${entry.food.calories_kcal.toLocaleString()} kcal`}</span></p>
+                <div className="food-basis">
+                  <span>{entry.food.calories_kcal === null ? '—' : `${estimated ? '≈' : ''}${formatNutrition(entry.food.calories_kcal)}`} kcal per {formatPortion.format(entry.food.basis_amount)} {entry.food.basis_unit}</span>
+                  {remembered && <small>Last used · {formatPortion.format(Number(remembered.amount))} {remembered.unit}</small>}
+                </div>
               </div>
               <div className="food-card-actions">
                 <Button variant="secondary" type="button" onClick={() => { setEditing(entry); setIsCreating(false); setPageNotice(''); }}>Edit</Button>
                 <button className="icon-button" type="button" aria-label={`Delete ${entry.food.name}`} onClick={() => { setDeleteCandidate(entry); setPageError(''); }}><Trash2 size={17} /></button>
               </div>
             </li>
-          ))}
+          ); })}
         </ul>
       )}
       {foods.hasNextPage && <Button variant="secondary" type="button" disabled={foods.isFetchingNextPage} onClick={() => void foods.fetchNextPage()}>{foods.isFetchingNextPage ? 'Loading more…' : 'Load more foods'}</Button>}
-      </> : <>
-        <div className="library-controls"><span>{normalizedSearch ? 'Matching meals' : 'Saved meals'}</span></div>
-        {new URLSearchParams(window.location.search).get('saved') === '1' && <StatusMessage tone="success">Meal saved to your Library.</StatusMessage>}
-        {meals.isPending ? <LoadingSkeleton label="Loading saved meals" /> : meals.isError ? <div className="page-stack"><StatusMessage tone="error">We couldn’t load saved meals. Your data is safe; try again.</StatusMessage><Button variant="secondary" type="button" onClick={() => void meals.refetch()}>Try again</Button></div> : meals.data.length === 0 ? (
-          <EmptyState icon={<BookOpen size={24} />} title={normalizedSearch ? 'No meals match that search' : 'Your saved meals start here'}><p>{normalizedSearch ? 'Try another name, or build a meal.' : 'Combine foods into meals you can adjust and use again.'}</p></EmptyState>
-        ) : <ul className="food-list" aria-label="Saved meals">{meals.data.map((entry) => <li className="food-card meal-card" key={entry.meal.id}>
-          <div className="food-card-main"><div><h2>{entry.meal.name}</h2></div>
-            <p className="food-basis">{entry.components.length} {entry.components.length === 1 ? 'ingredient' : 'ingredients'}</p>
-            <ul className="meal-card-components">{entry.components.map((component) => <li key={component.component_id}>{component.food?.name ?? 'Unavailable food'} · {component.amount} {component.unit}</li>)}</ul>
-          </div><div className="food-card-actions"><Link className="secondary-button" to={`/build?edit=${encodeURIComponent(entry.meal.id)}&from=library`}>Edit</Link></div>
-        </li>)}</ul>}
-      </>}
+      </> : <LibraryMeals userId={userId} fields={profile.data?.nutrientFields ?? []} search={normalizedSearch}
+        view={mealView} onViewChange={(next) => setParams(next === 'saved' ? { view: 'meals', list: 'saved' } : { view: 'meals' }, { replace: true })}
+        onSaved={() => { setSearch(''); setParams({ view: 'meals', list: 'saved' }, { replace: true }); }}
+        onDraftChange={setMealDraftDirty} />}
+
       </div>
 
       <Dialog open={pendingView !== null} title="Switch Library view?" onClose={() => setPendingView(null)}>

@@ -1,11 +1,14 @@
 import type { ComposerEntry } from '../../data/repositories/calendarRepository';
 import { nutrientsForUserFields, type CatalogFoodSearchResult } from '../../data/repositories/catalogFoodRepository';
-import type { FoodWithNutrients } from '../../data/repositories/foodRepository';
+import { loadFoodEntry, type FoodWithNutrients } from '../../data/repositories/foodRepository';
+import { loadMealEntry, type RecentMeal, type SavedMeal } from '../../data/repositories/mealRepository';
+import type { Json } from '../../data/database.types';
+import { DataError } from '../../data/dataError';
 import type { NutrientField } from '../../data/repositories/profileRepository';
 import type { DayItem, EatenItemSnapshot } from '../../domain/daySummary';
-import { readEatenSnapshot, readItemLogging, readPlannedChoice } from '../../domain/daySummary';
-import { convertFoodAmount, type PortionFood } from '../../domain/foodNutrition';
-import { CALORIES, formatNutrition, portionOptions, readLoggingDetails, valueCertainty, type DraftFood, type LoggingDetails, type PortionOption } from '../../domain/mealComposer';
+import { readEatenSnapshot, readItemLogging, readPlannedChoice, readReplannedSnapshot } from '../../domain/daySummary';
+import { calculateFoodPortion, convertFoodAmount, type PortionFood } from '../../domain/foodNutrition';
+import { CALORIES, formatNutrition, portionOptions, readLoggingDetails, roundQuantity, valueCertainty, type DraftFood, type LoggingDetails, type PortionOption } from '../../domain/mealComposer';
 import { isValidQuantity } from '../../domain/numericLimits';
 
 export type MealLabel = ComposerEntry['section'];
@@ -77,16 +80,139 @@ export function manualDraft(name: string) {
 export function snapshotDraft(snapshot: EatenItemSnapshot, logging = snapshot.logging) {
   const amount = snapshot.selected_amount;
   const unit = snapshot.selected_unit;
-  if (!isValidQuantity(amount) || snapshot.calories.value === null) return null;
+  if (!isValidQuantity(amount)) return null;
+  const component = snapshot.components?.[0] as Record<string, unknown> | undefined;
+  const directFood = snapshot.source === 'food' || snapshot.source === 'one_off_food';
+  if (directFood && !logging?.portions && component) {
+    const food = capturedComponentDraft(component, amount, unit, snapshot.name, snapshot.brand ?? null, logging);
+    if (food) return food;
+  }
   const basis = {
-    basisAmount: 1, basisUnit: unit, gramsPerServing: null, caloriesKcal: snapshot.calories.value / amount,
+    basisAmount: 1, basisUnit: unit, gramsPerServing: null, caloriesKcal: snapshot.calories.value === null ? null : snapshot.calories.value / amount,
     nutrients: Object.fromEntries(Object.entries(snapshot.nutrients).map(([key, metric]) => [key, metric.value === null ? null : metric.value / amount])),
   };
   return draft(snapshot.name, snapshot.brand ?? null, basis, String(amount), unit, logging ?? { values: {} },
     logging?.portions ?? portionOptions(basis, unit));
 }
 
+function capturedComponentDraft(component: Record<string, unknown>, amount: number, unit: string, name: string,
+  brand: string | null, logging?: LoggingDetails) {
+  const basisAmount = Number(component.basis_amount);
+  const basisUnit = component.basis_unit;
+  if (!(basisAmount > 0) || typeof basisUnit !== 'string' || !isValidQuantity(amount)) return null;
+  const nutrients = component.nutrients_per_basis as Record<string, { value?: number | null }> | undefined;
+  const basis: PortionFood = {
+    basisAmount, basisUnit, gramsPerServing: typeof component.grams_per_serving === 'number' ? component.grams_per_serving : null,
+    caloriesKcal: typeof component.calories_per_basis === 'number' ? component.calories_per_basis : null,
+    nutrients: Object.fromEntries(Object.entries(nutrients ?? {}).map(([key, metric]) => [key, metric?.value ?? null])),
+  };
+  const portions = portionOptions(basis, unit);
+  return portions.some((portion) => portion.unit === unit) ? draft(name, brand, basis, String(amount), unit, logging ?? { values: {} }, portions) : null;
+}
+
+export function savedPortionDraft(entry: FoodWithNutrients, amount: number, unit: string) {
+  const food = libraryDraft(entry);
+  const knownPortion = food.portions.find((portion) => portion.unit === unit);
+  const conversion = calculateFoodPortion(food.basis, 1, unit);
+  if (!isValidQuantity(amount) || (!knownPortion && !conversion.ok)) {
+    throw new DataError('A saved food’s portion can no longer be used. Review it in the Library.', 'validation');
+  }
+  const portions = !knownPortion && conversion.ok ? [...food.portions, { unit, ratio: conversion.multiplier }] : food.portions;
+  return { ...food, amount: String(amount), unit, portions };
+}
+
+function eatenDrafts(snapshot: EatenItemSnapshot, logging?: LoggingDetails): DraftFood[] {
+  if (snapshot.source === 'meal' || snapshot.source === 'one_off_meal') {
+    const components = (snapshot.components ?? []) as Array<Record<string, unknown>>;
+    // Captured meal component amounts are per serving of the saved meal.
+    const foods = components.map((component) => capturedComponentDraft(component,
+      roundQuantity(Number(component.amount) * snapshot.selected_amount), String(component.unit),
+      String(component.food_name ?? snapshot.name), null,
+      { values: {}, foodId: typeof component.food_id === 'string' ? component.food_id : undefined }));
+    if (foods.length && foods.every((food) => food !== null)) return foods.filter((food): food is DraftFood => food !== null);
+  }
+  const direct = snapshotDraft(snapshot, logging);
+  return direct ? [direct] : [];
+}
+
+export function recentMealDrafts(meal: RecentMeal): DraftFood[] {
+  const groups = meal.items.map((item) => {
+    const snapshot = readEatenSnapshot(item.eaten_snapshot);
+    return snapshot ? eatenDrafts(snapshot, readItemLogging(item)) : [];
+  });
+  return groups.every((foods) => foods.length > 0) ? groups.flat() : [];
+}
+
+export function recentMealName(foods: DraftFood[]) {
+  const shortNames = foods.slice(0, 2).map(({ name }) => name.split(',')[0]!.trim() || name);
+  const suffix = foods.length > 2 ? ` +${foods.length - 2}` : '';
+  return shortNames.map((name) => name.length > 70 ? name.slice(0, 69) + '…' : name).join(' + ') + suffix || 'Recent meal';
+}
+
+export function savedSnapshotDrafts(value: Json): DraftFood[] {
+  if (!Array.isArray(value)) return [];
+  const foods = value.map((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+    const { payload, amount, unit } = entry;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+      || typeof amount !== 'number' || typeof unit !== 'string' || typeof payload.name !== 'string'
+      || typeof payload.basisAmount !== 'number' || typeof payload.basisUnit !== 'string') return null;
+    const basis = {
+      basisAmount: payload.basisAmount, basisUnit: payload.basisUnit, gramsPerServing: null,
+      caloriesKcal: typeof payload.caloriesKcal === 'number' ? payload.caloriesKcal : null,
+      nutrients: payload.nutrients && typeof payload.nutrients === 'object' && !Array.isArray(payload.nutrients)
+        ? Object.fromEntries(Object.entries(payload.nutrients).filter((entry): entry is [string, number] => typeof entry[1] === 'number')) : {},
+    };
+    const logging = readLoggingDetails(entry.logging) ?? { values: {} };
+    return draft(payload.name, typeof payload.brand === 'string' ? payload.brand : null, basis, String(amount), unit,
+      logging, logging.portions ?? portionOptions(basis, unit));
+  });
+  return foods.every((food) => food !== null) ? foods : [];
+}
+
+export function savedMealDrafts(meal: SavedMeal, multiplier = 1): DraftFood[] {
+  if (meal.meal.snapshot_foods !== null) {
+    const foods = savedSnapshotDrafts(meal.meal.snapshot_foods);
+    if (foods.length) return foods.map((food) => ({ ...food, amount: String(roundQuantity(Number(food.amount) * multiplier)) }));
+  } else if (meal.components.length && meal.components.every((component) => component.food && !component.food.archived_at)) {
+    return meal.components.map((component) => savedPortionDraft(
+      { food: component.food!, nutrients: component.nutrients }, roundQuantity(component.amount * multiplier), component.unit,
+    ));
+  }
+  throw new DataError('Some foods in this saved meal are unavailable. Check it in Library.', 'validation');
+}
+
+export async function loadDiaryItemDrafts(userId: string, item: DayItem): Promise<DraftFood[]> {
+  const snapshot = readReplannedSnapshot(item) ?? readEatenSnapshot(item.eaten_snapshot);
+  if (snapshot) {
+    const foods = eatenDrafts(snapshot, readItemLogging(item));
+    if (foods.length) return foods;
+  }
+  const direct = plannedDraft(item);
+  if (direct) return [direct];
+
+  const planned = readPlannedChoice(item.planned_payload);
+  if (planned?.sourceKind === 'food' && planned.sourceId) {
+    const entry = await loadFoodEntry(userId, planned.sourceId);
+    if (entry) return [savedPortionDraft(entry, planned.amount, planned.unit)];
+  }
+  if (planned?.sourceKind === 'meal' && planned.sourceId) {
+    const entry = await loadMealEntry(userId, planned.sourceId);
+    if (entry) return savedMealDrafts(entry, planned.amount);
+  }
+  if (planned?.sourceKind === 'one_off_meal' && Array.isArray(planned.manualPayload?.components)) {
+    const components = planned.manualPayload.components as Array<{ food_id: string; amount: number; unit: string }>;
+    const entries = await Promise.all(components.map((component) => loadFoodEntry(userId, component.food_id)));
+    if (entries.length && entries.every((entry) => entry !== null)) {
+      return components.map((component, index) => savedPortionDraft(entries[index]!, roundQuantity(component.amount * planned.amount), component.unit));
+    }
+  }
+  throw new DataError('The saved food details for this meal are unavailable.', 'validation');
+}
+
 export function plannedDraft(item: DayItem) {
+  const frozen = readReplannedSnapshot(item);
+  if (frozen) return snapshotDraft(frozen, readItemLogging(item));
   const planned = readPlannedChoice(item.planned_payload);
   const payload = planned?.manualPayload;
   if (!planned || !payload || typeof payload.name !== 'string' || typeof payload.basisAmount !== 'number' || typeof payload.basisUnit !== 'string') return null;

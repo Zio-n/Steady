@@ -102,10 +102,20 @@ export function summarizeDay(items: DayItem[], displayedFieldIds: string[]) {
 }
 
 export function readItemLogging(item: Pick<DayItem, 'eaten_snapshot' | 'planned_payload'>): LoggingDetails | undefined {
-  return readLoggingDetails(object(item.eaten_snapshot)?.logging ?? object(item.planned_payload)?.logging);
+  const plan = object(item.planned_payload);
+  return readLoggingDetails(object(item.eaten_snapshot)?.logging ?? object(plan?.frozen_snapshot ?? null)?.logging ?? plan?.logging);
+}
+
+export function readReplannedSnapshot(item: DayItem): EatenItemSnapshot | null {
+  return item.state === 'planned' ? readEatenSnapshot(object(item.planned_payload)?.frozen_snapshot ?? null) : null;
 }
 
 export function readPlannedNutrition(item: DayItem) {
+  const captured = readReplannedSnapshot(item);
+  if (captured) return {
+    calories: captured.calories.value,
+    nutrients: Object.fromEntries(Object.entries(captured.nutrients).map(([key, metric]) => [key, metric.value])),
+  };
   const planned = readPlannedChoice(item.planned_payload);
   const payload = planned?.manualPayload;
   if (!planned || planned.sourceKind !== 'one_off_food' || !payload || payload.basisUnit !== planned.unit

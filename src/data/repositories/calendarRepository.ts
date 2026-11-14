@@ -104,10 +104,10 @@ export async function logCalendarItem(input: CalendarChoice) {
 }
 
 /** Logs one meal occurrence with independently captured food snapshots. */
-export async function logCalendarItems(inputs: CalendarChoice[]) {
+export async function logCalendarItems(inputs: CalendarChoice[], existingGroupId?: string) {
   if (!supabase) throw new DataError('Connect Supabase before logging a meal.', 'configuration');
   if (inputs.length < 1) throw new DataError('A meal needs at least one entry.', 'validation');
-  const mealGroupId = inputs[0]!.requestId;
+  const mealGroupId = existingGroupId ?? inputs[0]!.requestId;
   const { data, error } = await supabase.rpc('calendar_log_day_items', {
     p_items: inputs.map((input) => ({
       request_id: input.requestId, local_date: input.localDate, section: input.section,
@@ -193,6 +193,36 @@ export async function saveCalendarComposer(input: ComposerSave | RemoveSeriesOcc
     p_recurrence: input.state !== 'removed' ? input.recurrence : undefined,
     p_series_edit: input.seriesEdit,
     p_replace_group: input.state !== 'removed' ? input.replaceGroup : undefined,
+  });
+  if (error) throw toDataError(error);
+  return data;
+}
+
+export async function setCalendarMealState(input: {
+  requestId: string; localDate: string; state: ComposerSave['state']; items: Array<{ id: string; revision: number }>;
+}) {
+  if (!supabase) throw new DataError('Connect Supabase before updating this meal.', 'configuration');
+  const { data, error } = await supabase.rpc('set_calendar_meal_state', {
+    p_request_id: input.requestId,
+    p_local_date: input.localDate,
+    p_state: input.state,
+    p_items: input.items,
+  });
+  if (error) throw toDataError(error);
+  return data;
+}
+
+export type CalendarMealRemoval = { requestId: string; localDate: string } & (
+  { items: Array<{ id: string; revision: number }> } | { removalRequestId: string }
+);
+
+export async function changeCalendarMealRemoval(input: CalendarMealRemoval) {
+  if (!supabase) throw new DataError('Connect Supabase before updating this meal.', 'configuration');
+  const { data, error } = await supabase.rpc('change_calendar_meal_removal', {
+    p_request_id: input.requestId,
+    p_local_date: input.localDate,
+    p_items: 'items' in input ? input.items : undefined,
+    p_removal_request_id: 'removalRequestId' in input ? input.removalRequestId : undefined,
   });
   if (error) throw toDataError(error);
   return data;

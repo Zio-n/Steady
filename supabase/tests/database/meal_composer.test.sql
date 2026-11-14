@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select extensions.plan(23);
+select extensions.plan(41);
 
 insert into auth.users (id,aud,role,email,encrypted_password,email_confirmed_at) values
   ('d1220000-0000-4000-8000-000000000001','authenticated','authenticated','composer-owner@test.invalid','',now()),
@@ -86,7 +86,91 @@ select extensions.is((select count(*) from public.day_items where user_id=auth.u
 select extensions.is((select sum((eaten_snapshot->'calories'->>'value')::numeric) from public.day_items
   where user_id=auth.uid() and local_date=(select today-1 from composer_fixtures) and state='eaten'),540::numeric,'only corrected food calories are counted');
 
+create temp table meal_to_replan as
+select today-1 as local_date, (result->>'meal_group_id')::uuid as group_id,
+  jsonb_agg(jsonb_build_object('id',item.id,'revision',item.revision) order by item.id) as items,
+  jsonb_object_agg(item.id,item.eaten_snapshot) as snapshots
+from composer_fixtures join composer_result on key='log_corrected_plan'
+join public.day_items as item on item.id in (select value::uuid from jsonb_array_elements_text(result->'item_ids'))
+group by today,result;
+
+select extensions.throws_ok(
+  $$select public.set_calendar_meal_state(gen_random_uuid(),local_date,'planned',jsonb_set(items,'{1,revision}','99')) from meal_to_replan$$,
+  '40001','The meal has changed','a stale item aborts the entire state change');
+select extensions.is((select count(*) from public.day_items as item join meal_to_replan as meal on item.meal_group_id=meal.group_id
+  where item.state='eaten'),2::bigint,'a stale item leaves both foods eaten');
+insert into composer_result
+select 'replanned', public.set_calendar_meal_state('d1220000-0000-4000-8000-000000000030',local_date,'planned',items)
+from meal_to_replan;
+select extensions.is((select count(*) from public.day_items as item join meal_to_replan as meal on item.meal_group_id=meal.group_id
+  where item.state='planned' and item.eaten_at is null and item.eaten_snapshot is null),2::bigint,'marking as not eaten keeps both foods planned');
+select extensions.is((select jsonb_object_agg(item.id,item.planned_payload->'frozen_snapshot') from public.day_items as item
+  join meal_to_replan as meal on item.meal_group_id=meal.group_id where item.state='planned'),
+  (select snapshots from meal_to_replan),'returning to Planned preserves the original portions and nutrition');
+select extensions.is((select result from composer_result where key='replanned'),
+  (select public.set_calendar_meal_state('d1220000-0000-4000-8000-000000000030',local_date,'planned',items) from meal_to_replan),
+  'a state change can be retried safely');
+select extensions.is((select count(*) from public.day_item_history where action='replanned'),2::bigint,'replanning captures the eaten history once');
+
+select public.set_calendar_meal_state('d1220000-0000-4000-8000-000000000031',meal.local_date,'eaten',
+  jsonb_agg(jsonb_build_object('id',item.id,'revision',item.revision) order by item.id))
+from meal_to_replan as meal join public.day_items as item on item.meal_group_id=meal.group_id and item.state='planned'
+group by meal.local_date;
+select extensions.is((select jsonb_object_agg(item.id,item.eaten_snapshot) from public.day_items as item
+  join meal_to_replan as meal on item.meal_group_id=meal.group_id where item.state='eaten'),
+  (select snapshots from meal_to_replan),'logging again restores the exact snapshot');
+
+insert into composer_result
+select 'edited_eaten', public.save_calendar_composer('d1220000-0000-4000-8000-000000000032',meal.local_date,'eaten',
+  jsonb_set(jsonb_set(foods,'{0,section}','"breakfast"'),'{0,amount}','1'),
+  p_replace_group => jsonb_agg(jsonb_build_object('id',item.id,'revision',item.revision) order by item.id))
+from composer_fixtures, meal_to_replan as meal join public.day_items as item on item.meal_group_id=meal.group_id and item.state='eaten'
+group by meal.local_date,foods;
+select extensions.is((select result->>'meal_group_id' from composer_result where key='edited_eaten'),
+  (select group_id::text from meal_to_replan),'editing an eaten meal retains the occurrence identity');
+select extensions.is((select count(*) from public.day_items as item join meal_to_replan as meal on item.meal_group_id=meal.group_id
+  where item.state='eaten' and item.section='breakfast'),2::bigint,'editing in the composer can relabel the whole meal');
+select extensions.is((select sum((item.eaten_snapshot->'calories'->>'value')::numeric) from public.day_items as item
+  join meal_to_replan as meal on item.meal_group_id=meal.group_id where item.state='eaten'),445::numeric,
+  'editing the meal replaces the old intake in the daily total');
+
+create temp table meal_to_remove as
+select meal.local_date,meal.group_id,
+  jsonb_agg(jsonb_build_object('id',item.id,'revision',item.revision) order by item.id) as items,
+  jsonb_object_agg(item.id,item.eaten_snapshot) as snapshots
+from meal_to_replan as meal join public.day_items as item on item.meal_group_id=meal.group_id and item.state='eaten'
+group by meal.local_date,meal.group_id;
+select extensions.throws_ok(
+  $$select public.change_calendar_meal_removal(gen_random_uuid(),local_date,jsonb_set(items,'{1,revision}','99')) from meal_to_remove$$,
+  '40001','The meal has changed','a stale second food rolls back the entire deletion');
+select extensions.is((select count(*) from public.day_items as item join meal_to_remove as meal on item.meal_group_id=meal.group_id
+  where item.state='eaten'),2::bigint,'a failed removal retains both foods');
+insert into composer_result
+select 'removed',public.change_calendar_meal_removal('d1220000-0000-4000-8000-000000000033',local_date,items)
+from meal_to_remove;
+select extensions.is((select count(*) from public.day_items as item join meal_to_remove as meal on item.meal_group_id=meal.group_id
+  where item.state<>'removed'),0::bigint,'removing a meal takes out all its foods together');
+select extensions.is((select result from composer_result where key='removed'),
+  (select public.change_calendar_meal_removal('d1220000-0000-4000-8000-000000000033',local_date,items) from meal_to_remove),
+  'retrying removal returns the original receipt');
+insert into composer_result
+select 'restored',public.change_calendar_meal_removal('d1220000-0000-4000-8000-000000000034',local_date,
+  p_removal_request_id => 'd1220000-0000-4000-8000-000000000033') from meal_to_remove;
+select extensions.is((select jsonb_object_agg(item.id,item.eaten_snapshot) from public.day_items as item
+  join meal_to_remove as meal on item.meal_group_id=meal.group_id where item.state='eaten'),
+  (select snapshots from meal_to_remove),'undo restores every food with its exact logged nutrition');
+select extensions.is((select result from composer_result where key='restored'),
+  (select public.change_calendar_meal_removal('d1220000-0000-4000-8000-000000000034',local_date,
+    p_removal_request_id => 'd1220000-0000-4000-8000-000000000033') from meal_to_remove),'undo is safe to retry');
+
 select set_config('request.jwt.claim.sub','d1220000-0000-4000-8000-000000000002',true);
+select extensions.throws_ok(
+  $$select public.change_calendar_meal_removal(gen_random_uuid(),local_date,
+    p_removal_request_id => 'd1220000-0000-4000-8000-000000000033') from meal_to_remove$$,
+  '40001','The calendar date is unavailable or complete','another account cannot reuse the removal receipt');
+select extensions.throws_ok(
+  $$select public.set_calendar_meal_state(gen_random_uuid(),local_date,'planned',items) from meal_to_replan$$,
+  '40001','The calendar date is unavailable or complete','another account cannot change a meal’s state');
 select extensions.is((select jsonb_array_length(public.read_calendar_day_with_series(today+1)->'items') from composer_fixtures),0,'another account cannot read the repeat');
 select extensions.throws_ok(
   $$select public.save_calendar_composer('d1220000-0000-4000-8000-000000000023',today+1,'removed','[]',null,null,null,

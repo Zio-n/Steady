@@ -311,13 +311,13 @@ isOneToOne: false
                   ]
                 },"meals": {
                   Row: {
-                    "archived_at": string | null,"created_at": string,"id": string,"name": string,"revision": number,"sections": (Database["public"]['Enums']["meal_section"])[],"updated_at": string,"user_id": string
+                    "archived_at": string | null,"created_at": string,"history_key": string | null,"id": string,"name": string,"revision": number,"sections": (Database["public"]['Enums']["meal_section"])[],"snapshot_foods": Json | null,"updated_at": string,"user_id": string
                   }
                   Insert: {
-                    "archived_at"?: string | null,"created_at"?: string,"id"?: string,"name": string,"revision"?: number,"sections"?: (Database["public"]['Enums']["meal_section"])[],"updated_at"?: string,"user_id": string
+                    "archived_at"?: string | null,"created_at"?: string,"history_key"?: string | null,"id"?: string,"name": string,"revision"?: number,"sections"?: (Database["public"]['Enums']["meal_section"])[],"snapshot_foods"?: Json | null,"updated_at"?: string,"user_id": string
                   }
                   Update: {
-                    "archived_at"?: string | null,"created_at"?: string,"id"?: string,"name"?: string,"revision"?: number,"sections"?: (Database["public"]['Enums']["meal_section"])[],"updated_at"?: string,"user_id"?: string
+                    "archived_at"?: string | null,"created_at"?: string,"history_key"?: string | null,"id"?: string,"name"?: string,"revision"?: number,"sections"?: (Database["public"]['Enums']["meal_section"])[],"snapshot_foods"?: Json | null,"updated_at"?: string,"user_id"?: string
                   }
                   Relationships: [
 
@@ -417,6 +417,9 @@ isOneToOne: false
 "delete_food":
 { Args: { "p_expected_revision": number,"p_food_id": string,"p_request_id": string }; Returns: Json
                            },
+"change_calendar_meal_removal":
+{ Args: { "p_request_id": string,"p_local_date": string,"p_items"?: Json,"p_removal_request_id"?: string }; Returns: Json
+                           },
 "edit_calendar_food_snapshot":
 { Args: { "p_brand": string,"p_calories_per_basis": number,"p_component_index": number,"p_expected_item_revision": number,"p_item_id": string,"p_local_date": string,"p_name": string,"p_nutrients_per_basis": Json,"p_request_id": string }; Returns: Json
                            },
@@ -453,6 +456,9 @@ isOneToOne: false
 "save_calendar_composer":
 { Args: { "p_expected_revision"?: number,"p_items": Json,"p_local_date": string,"p_recurrence"?: Json,"p_replace_group"?: Json,"p_replace_item_id"?: string,"p_request_id": string,"p_series_edit"?: Json,"p_state": string }; Returns: Json
                            },
+"set_calendar_meal_state":
+{ Args: { "p_items": Json,"p_local_date": string,"p_request_id": string,"p_state": string }; Returns: Json
+                           },
 "save_calendar_target_transfer":
 { Args: { "p_amount_kcal": number,"p_destination_date": string,"p_origin_date": string,"p_request_id": string }; Returns: Json
                            },
@@ -467,6 +473,15 @@ isOneToOne: false
                            },
 "save_meal":
 { Args: { "p_components": Json,"p_expected_revision"?: number,"p_meal_id"?: string,"p_name": string,"p_request_id": string,"p_sections": Json }; Returns: Json
+                           },
+"list_recent_calendar_meals":
+{ Args: { "p_search"?: string,"p_limit"?: number,"p_offset"?: number,"p_history_key"?: string }; Returns: { history_key: string; local_date: string; last_logged_at: string; items: Json; saved_meal_id: string | null }[]
+                           },
+"save_snapshot_meal":
+{ Args: { "p_request_id": string,"p_name": string,"p_foods": Json,"p_history_key"?: string,"p_meal_id"?: string,"p_expected_revision"?: number }; Returns: Json
+                           },
+"archive_saved_meal":
+{ Args: { "p_request_id": string,"p_meal_id": string,"p_expected_revision": number }; Returns: Json
                            },
 "search_catalog_foods":
 { Args: { "p_limit"?: number,"p_locale"?: string,"p_query": string }; Returns: {
