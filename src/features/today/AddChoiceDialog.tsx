@@ -1,12 +1,13 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Calculator, CalendarDays, Check, ChevronDown, CircleDashed, Info, MoreHorizontal, Pencil, Plus, Repeat2, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Calculator, CalendarDays, Check, ChevronDown, CircleDashed, Info, MoreHorizontal, Pencil, Plus, Repeat2, SlidersHorizontal, Tag, Trash2, X } from 'lucide-react';
 import { DataError } from '../../data/dataError';
 import { queryKeys } from '../../data/queryKeys';
 import { saveCalendarComposer, type ComposerSave, type SeriesScope } from '../../data/repositories/calendarRepository';
-import { searchCatalogFoods } from '../../data/repositories/catalogFoodRepository';
+import { saveCatalogFoodCopy, searchCatalogFoods } from '../../data/repositories/catalogFoodRepository';
 import { loadRecentChoices } from '../../data/repositories/dayRepository';
-import { loadFoodEntry, loadFoodLibrary } from '../../data/repositories/foodRepository';
+import { loadFoodEntry, loadFoodLibrary, saveFood } from '../../data/repositories/foodRepository';
 import { loadFoodPortionPreferences } from '../../data/repositories/foodPortionPreferenceRepository';
 import { loadMealEntry, loadMeals, loadRecentMeals, saveSnapshotMeal, type SavedMeal } from '../../data/repositories/mealRepository';
 import type { NutrientField } from '../../data/repositories/profileRepository';
@@ -29,7 +30,7 @@ import { catalogueDraft, existingBlockDraft, libraryDraft, loadDiaryItemDrafts, 
 
 type EntryState = ComposerSave['state'];
 type Choice = { key: string; name: string; detail: string; calories: number | null; estimated?: boolean; select: () => void };
-type SaveInput = ComposerSave & { libraryName?: string };
+type SaveInput = ComposerSave & { libraryName?: string; libraryFood?: Omit<import('../../data/repositories/foodRepository').SaveFoodInput, 'requestId' | 'id' | 'expectedRevision'> & { catalogFoodId?: string; personallyAdjusted?: boolean } };
 const MAX_ITEMS = 50;
 const sectionOptions: Array<[MealLabel, string]> = [['unlabelled', 'No label'], ['breakfast', 'Breakfast'], ['lunch', 'Lunch'], ['dinner', 'Dinner'], ['snack', 'Snacks']];
 const weekdayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -91,6 +92,7 @@ function ComposerFood({ food, fields, displayed, expanded, disabled, editingMeal
 }) {
   const id = useId();
   const [renaming, setRenaming] = useState(false);
+  const [showBrand, setShowBrand] = useState(Boolean(food.brand));
   const [editingNutrients, setEditingNutrients] = useState<'preferred' | 'all' | null>(null);
   const [newUnit, setNewUnit] = useState<string | null>(null);
   const [unitWeight, setUnitWeight] = useState('');
@@ -159,8 +161,11 @@ function ComposerFood({ food, fields, displayed, expanded, disabled, editingMeal
       {renaming && <div className="composer-portion-pair">
         <Field id={`${id}-name`} label="Food name"><input id={`${id}-name`} className="text-field" autoFocus maxLength={160} value={food.name}
           disabled={disabled} onChange={(event) => onChange({ ...food, name: event.target.value, remember: true })} /></Field>
-        {editingMeal && <Field id={`${id}-brand`} label="Brand (optional)"><input id={`${id}-brand`} className="text-field" maxLength={120} value={food.brand ?? ''}
-          disabled={disabled} onChange={(event) => onChange({ ...food, brand: event.target.value || null, remember: true })} /></Field>}
+        {editingMeal && showBrand && <div className="composer-brand-field"><Field id={`${id}-brand`} label="Brand"><input id={`${id}-brand`} className="text-field" maxLength={120} placeholder="Brand name" value={food.brand ?? ''}
+          disabled={disabled} onChange={(event) => onChange({ ...food, brand: event.target.value || null, remember: true })} /></Field>
+          <button className="icon-button" type="button" aria-label="Remove brand" disabled={disabled} onClick={() => { onChange({ ...food, brand: null, remember: true }); setShowBrand(false); }}><X size={16} /></button>
+        </div>}
+        {editingMeal && !showBrand && <button className="composer-optional-trigger" type="button" disabled={disabled} onClick={() => setShowBrand(true)}><Plus size={15} aria-hidden="true" />Brand</button>}
       </div>}
       <div className="composer-portion-fields">
         <div className="composer-portion-pair">
@@ -176,7 +181,7 @@ function ComposerFood({ food, fields, displayed, expanded, disabled, editingMeal
       </div>
       {newUnit !== null && <div className="composer-custom-unit">
         <Field id={`${id}-custom`} label="Unit name"><input className="text-field" id={`${id}-custom`} value={newUnit} maxLength={24} onChange={(event) => setNewUnit(event.target.value)} /></Field>
-        {grams && <NumericField id={`${id}-weight`} label={`${grams.unit} per unit (optional)`} value={unitWeight} min={QUANTITY_MIN} max={QUANTITY_MAX} step={QUANTITY_STEP} onChange={(event) => setUnitWeight(event.target.value)} />}
+        {grams && <NumericField id={`${id}-weight`} label={`${grams.unit} per unit`} value={unitWeight} min={QUANTITY_MIN} max={QUANTITY_MAX} step={QUANTITY_STEP} onChange={(event) => setUnitWeight(event.target.value)} />}
         {!unitWeight && <small className="field-hint">Enter nutrition for the new unit if its conversion is unknown.</small>}
         <div className="composer-inline-actions"><button className="text-button" type="button" onClick={() => setNewUnit(null)}>Cancel</button>
           <Button variant="secondary" type="button" disabled={disabled || !newUnit.trim() || Boolean(unitWeight && !isValidQuantity(unitWeight))} onClick={useCustomUnit}>Use unit</Button></div>
@@ -199,13 +204,13 @@ function ComposerFood({ food, fields, displayed, expanded, disabled, editingMeal
 }
 
 type LibraryMealDraft = {
-  name: string; recentKey?: string; mealId?: string; revision?: number; foods: DraftFood[]; onDraftChange?: (dirty: boolean) => void;
+  kind?: 'meal' | 'food' | 'entry'; name: string; recentKey?: string; mealId?: string; revision?: number; foods: DraftFood[]; onDraftChange?: (dirty: boolean) => void;
 };
 
 type ComposerProps = {
   userId: string; fields: NutrientField[]; initialDate: string; today: string; timezone: string; anchor: HTMLElement | null;
   block?: DayItem; editingItems?: DayItem[]; startEaten?: boolean; attachFoods?: boolean; onClose: () => void; onSaved: (input: ComposerSave) => void;
-  reuse?: { recentKey: string } | { mealId: string };
+  reuse?: { recentKey: string } | { mealId: string } | { foodId: string };
   library?: LibraryMealDraft;
 };
 const emptyDraft: DraftFood[] = [];
@@ -215,8 +220,24 @@ export function LibraryMealComposer({ userId, fields, meal, onClose, onSaved, on
 }) {
   const date = new Date().toISOString().slice(0, 10);
   return <MealComposer userId={userId} fields={fields} initialDate={date} today={date} timezone="UTC" anchor={null}
-    onClose={onClose} onSaved={onSaved} library={{ ...meal, onDraftChange }}
+    onClose={onClose} onSaved={onSaved} library={{ ...meal, kind: 'meal', onDraftChange }}
     initialFoods={meal.foods.map((food, index) => ({ ...food, key: `saved-${index}` }))} />;
+}
+
+export function LibraryFoodComposer({ userId, fields, onClose, onSaved, onDraftChange }: {
+  userId: string; fields: NutrientField[]; onClose: () => void; onSaved: () => void; onDraftChange: (dirty: boolean) => void;
+}) {
+  const date = new Date().toISOString().slice(0, 10);
+  return <MealComposer userId={userId} fields={fields} initialDate={date} today={date} timezone="UTC" anchor={null}
+    onClose={onClose} onSaved={onSaved} library={{ kind: 'food', name: '', foods: [], onDraftChange }} initialFoods={emptyDraft} />;
+}
+
+export function LibraryEntryComposer({ userId, fields, onClose, onSaved, onDraftChange }: {
+  userId: string; fields: NutrientField[]; onClose: () => void; onSaved: () => void; onDraftChange: (dirty: boolean) => void;
+}) {
+  const date = new Date().toISOString().slice(0, 10);
+  return <MealComposer userId={userId} fields={fields} initialDate={date} today={date} timezone="UTC" anchor={null}
+    onClose={onClose} onSaved={onSaved} library={{ kind: 'entry', name: '', foods: [], onDraftChange }} initialFoods={emptyDraft} />;
 }
 
 export function AddChoiceDialog(props: ComposerProps) {
@@ -226,7 +247,13 @@ export function AddChoiceDialog(props: ComposerProps) {
     queryKey: [...queryKeys.day(userId, props.initialDate), 'meal-draft', editingItems?.map(({ id, revision }) => [id, revision]), reuse],
     queryFn: async () => {
       let foods: DraftFood[] = [];
-      if (reuse && 'mealId' in reuse) {
+      if (reuse && 'foodId' in reuse) {
+        const [food, portions] = await Promise.all([
+          loadFoodEntry(userId, reuse.foodId),
+          loadFoodPortionPreferences(userId).catch(() => null),
+        ]);
+        if (food) foods = [libraryDraft(food, portions?.[`library:${reuse.foodId}`])];
+      } else if (reuse && 'mealId' in reuse) {
         const meal = await loadMealEntry(userId, reuse.mealId);
         if (meal) foods = savedMealDrafts(meal);
       } else if (reuse) {
@@ -235,13 +262,13 @@ export function AddChoiceDialog(props: ComposerProps) {
       } else {
         foods = (await Promise.all(editingItems!.map((item) => loadDiaryItemDrafts(userId, item)))).flat();
       }
-      if (!foods.length) throw new DataError('This meal is unavailable.', 'not-found');
+      if (!foods.length) throw new DataError('This item is unavailable.', 'not-found');
       return foods.map((food, index) => ({ ...food, key: `saved-${index}` }));
     },
     enabled: loadFoods || Boolean(reuse),
     gcTime: 0,
   });
-  if ((loadFoods || reuse) && !draft.data) return <Dialog open title={reuse ? 'Add a meal' : 'Edit meal'} className="logging-composer is-compact" onClose={onClose} controlledClose lightDismiss>
+  if ((loadFoods || reuse) && !draft.data) return <Dialog open title={reuse && 'foodId' in reuse ? 'Add a food' : reuse ? 'Add a meal' : 'Edit meal'} className="logging-composer is-compact" onClose={onClose} controlledClose lightDismiss>
     {draft.isError ? <>
       <StatusMessage tone="error">{draft.error.message}</StatusMessage>
       <div className="dialog-actions"><Button type="button" variant="secondary" onClick={() => void draft.refetch()}>Try again</Button></div>
@@ -255,6 +282,7 @@ function MealComposer({ userId, fields, initialDate, today, timezone, anchor, bl
 }) {
   const id = useId();
   const [name, setName] = useState(library?.name ?? '');
+  const [showMealName, setShowMealName] = useState(library?.kind === 'meal' || Boolean(library?.name));
   const [date, setDate] = useState(initialDate);
   const existing = editingItems?.[0];
   const series = existing?.series_id ? existing : undefined;
@@ -286,18 +314,24 @@ function MealComposer({ userId, fields, initialDate, today, timezone, anchor, bl
   const [suggestions, setSuggestions] = useState(false);
   const [loadingRecent, setLoadingRecent] = useState(false);
   const [notice, setNotice] = useState('');
-  const [discard, setDiscard] = useState(false);
+  const [discardHost, setDiscardHost] = useState<HTMLDialogElement | null>(null);
   const [uncertainSave, setUncertainSave] = useState<SaveInput | null>(null);
   const lastRequest = useRef<IdempotentRequest | null>(null);
   const content = useRef<HTMLDivElement>(null);
+  const mealNameInput = useRef<HTMLInputElement>(null);
   const searchArea = useRef<HTMLDivElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const foodList = useRef<HTMLOListElement>(null);
+  const discardDialog = useRef<HTMLElement>(null);
+  const discardKeepEditing = useRef<HTMLButtonElement>(null);
+  const discardReturnFocus = useRef<HTMLElement | null>(null);
   const schedule = useRef<HTMLDetailsElement>(null);
   const requestInFlight = useRef(false);
   const displayed = fields.filter((field) => field.is_displayed).slice(0, 3);
   const locale = navigator.language || null;
   const activeSearch = suggestions && !blockMode;
+  useEffect(() => { if (discardHost) discardKeepEditing.current?.focus({ preventScroll: true }); }, [discardHost]);
+  useEffect(() => { if (showMealName) mealNameInput.current?.focus({ preventScroll: true }); }, [showMealName]);
   useLayoutEffect(() => {
     const dialog = content.current?.closest('dialog');
     if (!anchor || !dialog) return;
@@ -320,10 +354,17 @@ function MealComposer({ userId, fields, initialDate, today, timezone, anchor, bl
     };
   }, [anchor]);
   const save = useMutation({
-    mutationFn: (input: SaveInput) => library ? saveSnapshotMeal({
-      requestId: input.requestId, name: input.libraryName!,
-      foods: input.items, historyKey: library.recentKey, mealId: library.mealId, revision: library.revision,
-    }) : saveCalendarComposer(input),
+    mutationFn: (input: SaveInput) => {
+      if ((library?.kind === 'food' || library?.kind === 'entry') && input.libraryFood) {
+        const { catalogFoodId, personallyAdjusted, ...food } = input.libraryFood;
+        if (catalogFoodId) return saveCatalogFoodCopy({ ...food, requestId: input.requestId, catalogFoodId, isPersonallyAdjusted: Boolean(personallyAdjusted) });
+        return saveFood({ ...food, requestId: input.requestId, id: null, expectedRevision: null });
+      }
+      return library ? saveSnapshotMeal({
+        requestId: input.requestId, name: input.libraryName!,
+        foods: input.items, historyKey: library.recentKey, mealId: library.mealId, revision: library.revision,
+      }) : saveCalendarComposer(input);
+    },
     onSuccess: (_result, input) => onSaved(input),
     onError: (error, input) => {
       if (!(error instanceof DataError) || error.retryable) setUncertainSave(input);
@@ -429,7 +470,7 @@ function MealComposer({ userId, fields, initialDate, today, timezone, anchor, bl
   }
 
   const matchesSearch = (name: string, brand: string | null = null) => !term || choiceMatchScore(name, brand, term) >= 0;
-  const recentChoices: Choice[] = (recents.data ?? []).filter((choice) => (!library || choice.kind !== 'meal') && matchesSearch(choice.name)).slice(0, 5).map((choice) => {
+  const recentChoices: Choice[] = (recents.data ?? []).filter((choice) => (!library || choice.kind !== 'meal') && library?.kind !== 'food' && matchesSearch(choice.name)).slice(0, 5).map((choice) => {
     const snapshot = choice.snapshot ? recentSnapshotDraft(choice.snapshot) : null;
     const remembered = choice.kind === 'food' ? preferences.data?.[`library:${choice.id}`] : undefined;
     const portion = snapshot ?? remembered ?? choice;
@@ -447,7 +488,7 @@ function MealComposer({ userId, fields, initialDate, today, timezone, anchor, bl
     return [{ key: `recent-meal:${meal.key}`, name: recentMealName(foods), detail: `Recent meal · ${foods.length} foods`,
       calories: total.value, estimated: total.estimated, select: () => addFoods(foods) }];
   });
-  const savedChoices: Choice[] = [
+  const savedChoices: Choice[] = library?.kind === 'food' ? [] : [
     ...(personal.data ?? []).filter(({ food }) => matchesSearch(food.name, food.brand)).map((entry) => {
       const food = libraryDraft(entry, preferences.data?.[`library:${entry.food.id}`]);
       return {
@@ -483,16 +524,21 @@ function MealComposer({ userId, fields, initialDate, today, timezone, anchor, bl
   const calories = mealMetric(activeFoods, CALORIES);
   const scheduleValid = frequency === 'none' || (Number.isInteger(Number(interval)) && Number(interval) >= 1 && Number(interval) <= 365
     && (frequency === 'daily' || weekdays.length > 0) && (!endsOn || isValidLocalDate(endsOn) && endsOn >= date));
+  const savingFood = library?.kind === 'food' || library?.kind === 'entry' && activeFoods.length === 1 && !name.trim();
+  const libraryFood = savingFood && activeFoods.length === 1 ? activeFoods[0] : undefined;
   const canSave = state !== null && isValidLocalDate(date) && activeFoods.length > 0 && activeFoods.length <= MAX_ITEMS && activeFoods.every(validDraftFood)
-    && (library ? Boolean(name.trim()) : scheduleValid && (state === 'planned' && !blockMode || calories.complete) && (state !== 'eaten' || date <= today));
-  const dirty = library ? name !== library.name || foods !== initialDraft : existing
+    && (savingFood ? Boolean(libraryFood?.name.trim()) : library?.kind === 'entry' ? Boolean(name.trim() || activeFoods.length > 1)
+      : library ? Boolean(name.trim()) : scheduleValid && (state === 'planned' && !blockMode || calories.complete) && (state !== 'eaten' || date <= today));
+  const dirty = library ? (library.kind === 'food' ? foods !== initialDraft : name !== library.name || foods !== initialDraft) : existing
     ? foods !== initialDraft || calorieBlock !== initialBlock || section !== initialSection || state !== initialState || scope !== 'one'
-    : foods.length > 0 || calorieBlock.name !== '' || basisValue(calorieBlock, CALORIES) !== null;
+    : (foods.length > 0 && (foods !== initialDraft || date !== initialDate || section !== initialSection || state !== initialState || frequency !== 'none'))
+      || calorieBlock.name !== '' || basisValue(calorieBlock, CALORIES) !== null;
   const onDraftChange = library?.onDraftChange;
   useEffect(() => { onDraftChange?.(dirty || locked); }, [onDraftChange, dirty, locked]);
-  const title = library ? library.mealId ? 'Edit saved meal' : 'New saved meal'
+  const title = library?.kind === 'food' ? 'Add food' : library?.kind === 'entry' || library?.recentKey ? 'Add to Library' : library ? library.mealId ? 'Edit saved meal' : 'New saved meal'
     : attachFoods ? 'Add foods to calorie block' : series ? 'Edit repeating meal' : editingEntry ? blockMode ? 'Edit calories' : 'Edit meal' : blockMode ? 'Add calories' : 'Add a meal';
-  const verb = library ? library.mealId ? 'Save changes' : 'Save meal'
+  const verb = library?.kind === 'entry' ? activeFoods.length === 0 ? 'Save to Library' : savingFood ? 'Save food' : 'Save meal'
+    : savingFood ? 'Save food' : library ? library.mealId ? 'Save changes' : 'Save meal'
     : startEaten ? 'Log meal' : editingEntry ? 'Save changes' : state === 'planned' ? blockMode ? 'Plan calories' : 'Plan meal' : blockMode ? 'Log calories' : 'Log meal';
 
   function chooseDate(next: string) {
@@ -515,7 +561,17 @@ function MealComposer({ userId, fields, initialDate, today, timezone, anchor, bl
   function submit() {
     if (!state || !canSave || locked || (editingEntry && !dirty && !startEaten)) return;
     const input = {
-      libraryName: library ? name.trim() : undefined,
+      libraryName: library ? name.trim() || (library.kind === 'entry' ? recentMealName(activeFoods) : '') : undefined,
+      libraryFood: libraryFood ? {
+        catalogFoodId: libraryFood.details.catalogueFoodId,
+        personallyAdjusted: libraryFood.remember,
+        name: libraryFood.name.trim(), brand: libraryFood.brand,
+        basisAmount: libraryFood.basis.basisAmount, basisUnit: libraryFood.basis.basisUnit,
+        gramsPerServing: libraryFood.basis.gramsPerServing ?? null,
+        defaultPortionAmount: Number(libraryFood.amount), defaultPortionUnit: libraryFood.unit,
+        caloriesKcal: libraryFood.basis.caloriesKcal,
+        nutrients: Object.fromEntries(Object.entries(libraryFood.basis.nutrients).filter((entry): entry is [string, number] => typeof entry[1] === 'number')),
+      } : undefined,
       localDate: date, state, items: activeFoods.map((food) => {
         const savedFood = editingEntry && initialDraft.some(({ key }) => key === food.key);
         return prepareFood(library || savedFood ? { ...food, remember: false } : food, fields, section);
@@ -531,22 +587,29 @@ function MealComposer({ userId, fields, initialDate, today, timezone, anchor, bl
 
   function requestClose() {
     if (save.isPending) return;
-    if (dirty || uncertainSave) setDiscard(true);
-    else onClose();
+    if (dirty || uncertainSave) {
+      discardReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setDiscardHost(content.current?.closest('dialog') ?? null);
+    } else onClose();
+  }
+
+  function keepEditing() {
+    setDiscardHost(null);
+    discardReturnFocus.current?.focus({ preventScroll: true });
+    discardReturnFocus.current = null;
   }
 
   const renderChoice = (choice: Choice) => <li key={choice.key}><button type="button" disabled={locked || loadingRecent} onClick={choice.select}>
     <span><strong>{choice.name}</strong><small>{choice.detail}</small></span>
     <span className="composer-result-facts">{choice.calories !== null && <Metric value={choice.calories} estimated={choice.estimated} unit="kcal" />}<Plus size={16} aria-hidden="true" /></span>
   </button></li>;
-
   return <>
-    <Dialog open title={title} className={`logging-composer${foods.length === 0 && !library ? ' is-compact' : ''}`} closeDisabled={save.isPending} onClose={requestClose} controlledClose lightDismiss>
+    <Dialog open title={title} className={`logging-composer${foods.length === 0 && !library ? ' is-compact' : ''}`} closeDisabled={save.isPending} onClose={discardHost ? keepEditing : requestClose} controlledClose lightDismiss>
       <div className="composer-content" ref={content}>
-        {library ? <div className="composer-library-name"><Field label="Meal name" id={`${id}-meal-name`}>
-          <input id={`${id}-meal-name`} className="text-field" value={name} maxLength={160} disabled={locked}
+        {library?.kind === 'meal' ? <div className="composer-library-name"><Field label="Meal name" id={`${id}-meal-name`}>
+          <input id={`${id}-meal-name`} ref={mealNameInput} className="text-field" value={name} maxLength={160} disabled={locked}
             placeholder="e.g. Usual breakfast" onChange={(event) => setName(event.target.value)} />
-        </Field></div> : <div className="composer-toolbar">
+        </Field></div> : library ? null : <div className="composer-toolbar">
           <details className="composer-schedule" ref={schedule} onBlur={(event) => {
             if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
           }} onKeyDown={(event) => {
@@ -574,7 +637,7 @@ function MealComposer({ userId, fields, initialDate, today, timezone, anchor, bl
                   {weekdayNames.map((day, index) => <button type="button" key={day} aria-label={day} aria-pressed={weekdays.includes(index + 1)} disabled={locked}
                     onClick={() => setWeekdays((current) => current.includes(index + 1) ? current.filter((value) => value !== index + 1) : [...current, index + 1])}>{day.slice(0, 2)}</button>)}
                 </div>}
-                <Field id={`${id}-until`} label="End date (optional)"><input id={`${id}-until`} type="date" className="text-field" min={date} value={endsOn}
+                <Field id={`${id}-until`} label="End date"><input id={`${id}-until`} type="date" className="text-field" min={date} value={endsOn}
                   disabled={locked} onChange={(event) => setEndsOn(event.target.value)} /></Field>
               </>}
             </div>
@@ -609,13 +672,19 @@ function MealComposer({ userId, fields, initialDate, today, timezone, anchor, bl
           </label>
           {suggestions && <div className="composer-suggestions" id={`${id}-suggestions`}>
             {(personal.isError || meals.isError || recentMeals.isError || catalogue.isError) && <p className="field-hint" role="status">Some search results couldn’t load.</p>}
-            <ul aria-label="Food and meal suggestions">{results.map(renderChoice)}
+            <ul aria-label={library?.kind === 'food' ? 'Food suggestions' : 'Food and meal suggestions'}>{results.map(renderChoice)}
               {search.trim() && <li><button type="button" disabled={locked || loadingRecent} onClick={() => addFoods([manualDraft(search.trim())])}><span><strong>Add “{search.trim()}”</strong><small>Enter calories yourself</small></span><Plus size={16} /></button></li>}
             </ul>
             {searching && <p className="field-hint" role="status">Searching…</p>}
             {!searching && !search.trim() && results.length === 0 && <p className="field-hint">Search for a food to get started.</p>}
           </div>}
         </div>}
+        {library?.kind === 'entry' && showMealName && <div className="composer-library-name composer-library-name-editable">
+          <Field label="Meal name" id={`${id}-meal-name`}><input id={`${id}-meal-name`} ref={mealNameInput} className="text-field" value={name} maxLength={160} disabled={locked}
+            placeholder="e.g. Usual breakfast" onChange={(event) => setName(event.target.value)} /></Field>
+          <button className="icon-button" type="button" aria-label="Remove meal name" disabled={locked} onClick={() => { setName(''); setShowMealName(false); }}><X size={16} /></button>
+        </div>}
+        {library?.kind === 'entry' && foods.length > 0 && !showMealName && <button className="composer-name-trigger" type="button" disabled={locked} onClick={() => setShowMealName(true)}><Tag size={15} aria-hidden="true" />Name meal</button>}
         {!library && !editingEntry && (blockMode || foods.length === 0) && <div className="composer-entry-shortcuts">
           <button className="composer-calorie-switch" type="button" disabled={locked} onClick={() => {
             setSuggestions(false); setBlockMode((mode) => !mode);
@@ -627,10 +696,10 @@ function MealComposer({ userId, fields, initialDate, today, timezone, anchor, bl
         <div className="composer-items">
           {blockMode ? <div className="composer-block-fields">
             <FoodValueInput food={calorieBlock} field={CALORIES} label="Calories (kcal)" disabled={locked} onChange={setCalorieBlock} />
-            <Field id={`${id}-name`} label="Name (optional)"><input className="text-field" id={`${id}-name`} placeholder="e.g. Dinner out" maxLength={160}
+            <Field id={`${id}-name`} label="Name"><input className="text-field" id={`${id}-name`} placeholder="e.g. Dinner out" maxLength={160}
               value={calorieBlock.name} disabled={locked} onChange={(event) => setCalorieBlock({ ...calorieBlock, name: event.target.value })} /></Field>
           </div> : <>
-            <ol className="composer-food-list" ref={foodList}>{foods.map((food) => <ComposerFood key={food.key} food={food} fields={fields} displayed={displayed} editingMeal={editingEntry}
+            <ol className="composer-food-list" ref={foodList}>{foods.map((food) => <ComposerFood key={food.key} food={food} fields={fields} displayed={displayed} editingMeal={editingEntry || Boolean(library)}
               expanded={activeKey === food.key} disabled={locked} onExpand={() => setActiveKey((key) => key === food.key ? null : food.key)}
               onChange={(next) => setFoods((current) => current.map((entry) => entry.key === food.key ? next : entry))}
               onRemove={() => {
@@ -642,7 +711,7 @@ function MealComposer({ userId, fields, initialDate, today, timezone, anchor, bl
         </div>
         <div className="composer-footer">
           {!blockMode && foods.length > 0 && <>
-            <div className="composer-total"><span>Meal total · {foods.length} {foods.length === 1 ? 'food' : 'foods'}</span>
+            <div className="composer-total"><span>{savingFood ? 'Food total' : `Meal total · ${foods.length} ${foods.length === 1 ? 'food' : 'foods'}`}</span>
               <strong><Metric value={calories.value} estimated={calories.estimated} partial={!calories.complete} unit="kcal" /></strong></div>
             {displayed.length > 0 && <dl className="composer-total-nutrients">{displayed.map((field) => {
               const metric = mealMetric(foods, field.field_id);
@@ -653,7 +722,7 @@ function MealComposer({ userId, fields, initialDate, today, timezone, anchor, bl
             setFoods((current) => [...current.slice(0, removed.index), removed.food, ...current.slice(removed.index)]);
             setRemoved(null);
           }}>Undo</button></div>}
-          {activeFoods.length > 0 && !canSave && <small className="field-hint">{library && !name.trim() ? 'Enter a meal name.' : state === null ? 'Choose Eaten or Planned for this meal.'
+          {activeFoods.length > 0 && !canSave && <small className="field-hint">{library?.kind === 'meal' && !name.trim() ? 'Enter a meal name.' : library?.kind === 'food' && !libraryFood?.name.trim() ? 'Enter a food name.' : state === null ? 'Choose Eaten or Planned for this meal.'
             : activeFoods.length > MAX_ITEMS ? 'A meal can contain up to 50 foods.'
             : !library && !calories.complete && (state === 'eaten' || blockMode) ? 'Enter calories before saving.' : 'Check the amounts and nutrition values.'}</small>}
           {save.isError && <StatusMessage tone="error">{uncertainSave ? 'The save could not be confirmed. Retry to finish the same request.' : save.error.message}</StatusMessage>}
@@ -671,9 +740,23 @@ function MealComposer({ userId, fields, initialDate, today, timezone, anchor, bl
         </div>
       </div>
     </Dialog>
-    <Dialog open={discard} title="Close meal draft?" onClose={() => setDiscard(false)}>
-      <p>{uncertainSave ? 'The save has not been confirmed. Check the calendar before adding this meal again.' : 'Your changes to this meal will be discarded.'}</p>
-      <div className="dialog-actions"><Button variant="secondary" type="button" onClick={() => setDiscard(false)}>Keep editing</Button><Button type="button" onClick={onClose}>Close draft</Button></div>
-    </Dialog>
+    {discardHost && createPortal(<div className="composer-discard-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) { event.preventDefault(); keepEditing(); } }}>
+      <section ref={discardDialog} className="composer-discard-dialog" role="alertdialog" aria-modal="true" aria-labelledby={`${id}-discard-title`}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') { event.preventDefault(); keepEditing(); return; }
+          if (event.key !== 'Tab') return;
+          const focusable = [...(discardDialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled)') ?? [])];
+          if (!focusable.length) return;
+          if (event.shiftKey && document.activeElement === focusable[0]) { event.preventDefault(); focusable.at(-1)?.focus(); }
+          else if (!event.shiftKey && document.activeElement === focusable.at(-1)) { event.preventDefault(); focusable[0]?.focus(); }
+        }}>
+        <h2 id={`${id}-discard-title`}>{uncertainSave ? 'Save status unknown' : 'Close this draft?'}</h2>
+        <p>{uncertainSave ? `Check your ${library ? 'Library' : 'Calendar'} before retrying.` : 'Unsaved changes will be discarded.'}</p>
+        <div className="composer-discard-actions">
+          <button ref={discardKeepEditing} className="secondary-button" type="button" onClick={keepEditing}>Keep editing</button>
+          <button className="primary-button" type="button" onClick={onClose}>{uncertainSave ? 'Close draft' : 'Discard'}</button>
+        </div>
+      </section>
+    </div>, discardHost)}
   </>;
 }

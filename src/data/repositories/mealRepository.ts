@@ -79,6 +79,13 @@ export async function loadRecentMeals(search = '', limit = 20, offset = 0, histo
   }));
 }
 
+export async function hideRecentMeal(userId: string, historyKey: string) {
+  if (!supabase) throw new DataError('Connect Supabase before updating your library.', 'configuration');
+  const { error } = await supabase.from('hidden_recent_meals')
+    .upsert({ user_id: userId, history_key: historyKey }, { ignoreDuplicates: true });
+  if (error) throw toDataError(error);
+}
+
 export async function saveSnapshotMeal(input: {
   requestId: string; name: string; foods: ComposerEntry[]; historyKey?: string; mealId?: string; revision?: number;
 }) {

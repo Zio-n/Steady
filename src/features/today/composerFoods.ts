@@ -146,7 +146,7 @@ export function recentMealDrafts(meal: RecentMeal): DraftFood[] {
 export function recentMealName(foods: DraftFood[]) {
   const shortNames = foods.slice(0, 2).map(({ name }) => name.split(',')[0]!.trim() || name);
   const suffix = foods.length > 2 ? ` +${foods.length - 2}` : '';
-  return shortNames.map((name) => name.length > 70 ? name.slice(0, 69) + '…' : name).join(' + ') + suffix || 'Recent meal';
+  return shortNames.map((name) => name.length > 70 ? name.slice(0, 69) + '…' : name).join(', ') + suffix || 'Recent meal';
 }
 
 export function savedSnapshotDrafts(value: Json): DraftFood[] {

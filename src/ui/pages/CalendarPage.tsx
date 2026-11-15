@@ -94,8 +94,10 @@ export function CalendarPage() {
   } | null>(null);
   const recentKey = searchParams.get('recent');
   const savedMealId = searchParams.get('meal');
+  const savedFoodId = searchParams.get('food');
   const reuse = view !== 'day' ? undefined : recentKey && /^[0-9a-f]{32}$/.test(recentKey) ? { recentKey }
-    : savedMealId && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(savedMealId) ? { mealId: savedMealId } : undefined;
+    : savedMealId && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(savedMealId) ? { mealId: savedMealId }
+      : savedFoodId && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(savedFoodId) ? { foodId: savedFoodId } : undefined;
   const composer = composerDraft ?? (view === 'day' && (reuse || searchParams.get('start') === 'meal') ? { anchorTile: null } : null);
   const composerTrigger = useRef<HTMLButtonElement | null>(null);
   const [draftTile, setDraftTile] = useState<HTMLDivElement | null>(null);
@@ -154,11 +156,12 @@ export function CalendarPage() {
 
   function closeComposer() {
     setComposer(null);
-    if (searchParams.has('start') || searchParams.has('recent') || searchParams.has('meal')) {
+    if (searchParams.has('start') || searchParams.has('recent') || searchParams.has('meal') || searchParams.has('food')) {
       const next = new URLSearchParams(searchParams);
       next.delete('start');
       next.delete('recent');
       next.delete('meal');
+      next.delete('food');
       setSearchParams(next, { replace: true });
     }
     requestAnimationFrame(() => composerTrigger.current?.focus({ preventScroll: true }));
@@ -355,14 +358,17 @@ export function CalendarPage() {
   const title = view === 'day'
     ? `${formatLocalDate(localDate, timezone, { month: 'long' })} ${formatLocalDate(localDate, timezone, { day: 'numeric' })}, ${formatLocalDate(localDate, timezone, { year: 'numeric' })}`
     : rangeTitle;
-  const compactTitle = view === 'day' ? formatLocalDate(localDate, timezone, { weekday: 'short', day: 'numeric', month: 'short' }) : rangeTitle;
-  return <>{headerHost && createPortal(<div className="calendar-toolbar" data-view={view}>
+  const compactTitle = view === 'day' ? formatLocalDate(localDate, timezone, { day: 'numeric', month: 'short' })
+    : view === 'month' ? formatLocalDate(localDate, timezone, { month: 'short', year: 'numeric' })
+      : `${formatLocalDate(rangeFrom, timezone, rangeFrom.slice(0, 7) === rangeTo.slice(0, 7) ? { day: 'numeric' } : { day: 'numeric', month: 'short' })} – ${formatLocalDate(rangeTo, timezone, { day: 'numeric', month: 'short' })}`;
+  return <>{headerHost && createPortal(<div className="calendar-toolbar">
       <div className="calendar-toolbar-navigation" aria-label="Calendar date navigation">
         <button className="calendar-today-button" type="button" onClick={() => chooseDate(today)}>Today</button>
         <button className="calendar-period-button" type="button" aria-label={`Previous ${view}`} onClick={() => movePeriod(-1)}><ChevronLeft size={20} /></button>
         <button className="calendar-period-button" type="button" aria-label={`Next ${view}`} onClick={() => movePeriod(1)}><ChevronRight size={20} /></button>
       </div>
       <div className="calendar-date-picker-control"><button ref={monthTrigger} className="calendar-month-toggle" type="button" aria-label={`Choose date, ${title}`} aria-controls="calendar-month-picker" aria-expanded={monthPickerOpen} onClick={() => {
+        setViewMenuOpen(false);
         setPickerMonth(localDate.slice(0, 7));
         setMonthPickerOpen((open) => !open);
       }}><span className="calendar-date-label-full">{title}</span><span className="calendar-date-label-compact">{compactTitle}</span><ChevronDown aria-hidden="true" size={19} className={monthPickerOpen ? 'is-open' : ''} /></button>
@@ -376,10 +382,10 @@ export function CalendarPage() {
           const eatenCalories = daySummary.calories.value;
           const pastOrToday = day.localDate <= today;
           const calorieLabel = pastOrToday && daySummary.eatenCount > 0 && eatenCalories !== null
-            ? `${daySummary.calories.estimated ? '≈' : ''}${new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(eatenCalories)} kcal` : null;
+            ? `${daySummary.calories.estimated ? '≈' : ''}${new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(eatenCalories)}` : null;
           const planLabel = !calorieLabel && daySummary.plannedCount > 0 ? `${daySummary.plannedCount} planned` : null;
           const outside = day.localDate.slice(0, 7) !== pickerMonth;
-          return <button key={day.localDate} className={`calendar-month-date${outside ? ' is-outside' : ''}${day.localDate === localDate ? ' is-selected' : ''}${day.localDate === today ? ' is-today' : ''}`} type="button" aria-current={day.localDate === today ? 'date' : undefined} aria-label={`${formatLocalDate(day.localDate, timezone, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}${calorieLabel ? `, ${calorieLabel} eaten` : planLabel ? `, ${planLabel}` : ''}`} onClick={() => selectDay(day.localDate)}><span>{formatLocalDate(day.localDate, timezone, { day: 'numeric' })}</span>{(calorieLabel || planLabel) && <small>{calorieLabel || planLabel}</small>}</button>;
+          return <button key={day.localDate} className={`calendar-month-date${outside ? ' is-outside' : ''}${day.localDate === localDate ? ' is-selected' : ''}${day.localDate === today ? ' is-today' : ''}`} type="button" aria-current={day.localDate === today ? 'date' : undefined} aria-label={`${formatLocalDate(day.localDate, timezone, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}${calorieLabel ? `, ${calorieLabel} kcal eaten` : planLabel ? `, ${planLabel}` : ''}`} onClick={() => { selectDay(day.localDate); monthTrigger.current?.focus(); }}><span>{formatLocalDate(day.localDate, timezone, { day: 'numeric' })}</span>{(calorieLabel || planLabel) && <small>{calorieLabel || planLabel}</small>}</button>;
         })}</div>}
       </section>}</div>
       {monthPickerOpen && <button className="calendar-picker-scrim" type="button" tabIndex={-1} aria-label="Close calendar picker" onClick={() => setMonthPickerOpen(false)} />}
@@ -391,7 +397,7 @@ export function CalendarPage() {
           <ChevronDown className={viewMenuOpen ? 'is-open' : ''} size={17} aria-hidden="true" />
         </button>
         {viewMenuOpen && <div className="calendar-view-options" id="calendar-view-options" role="group" aria-label="Calendar view choices">
-          {calendarViews.map(({ value, label, icon: Icon }) => <button key={value} className={`calendar-view-option${view === value ? ' is-active' : ''}`} type="button" aria-current={view === value ? 'true' : undefined} onClick={() => chooseView(value)}><Icon size={18} strokeWidth={1.8} aria-hidden="true" /><span>{label}</span>{view === value && <Check className="calendar-view-check" size={16} strokeWidth={2} aria-hidden="true" />}</button>)}
+          {calendarViews.map(({ value, label, icon: Icon }) => <button key={value} className={`calendar-view-option${view === value ? ' is-active' : ''}`} type="button" aria-current={view === value ? 'true' : undefined} onClick={() => { chooseView(value); viewTriggerRef.current?.focus(); }}><Icon size={18} strokeWidth={1.8} aria-hidden="true" /><span>{label}</span>{view === value && <Check className="calendar-view-check" size={16} strokeWidth={2} aria-hidden="true" />}</button>)}
         </div>}
       </div>
     </div>, headerHost)}
@@ -425,7 +431,7 @@ export function CalendarPage() {
           <section className="calendar-calories" aria-label="Daily calorie summary">
             <span className="calendar-metric-label">Calories eaten{calories.value !== null && !calories.complete && <IncompleteIndicator nutrient="calorie" />}</span>
             <div className="calendar-calorie-value"><strong>{nutritionText(calories.value, '', calories.estimated)}</strong><span>{target === null ? 'kcal' : `of ${number(target)} kcal`}</span></div>
-            {target === null ? <p>Target not set</p> : remaining !== null && <p>{nutritionText(Math.abs(remaining), '', calories.estimated)} {remaining >= 0 ? 'remaining' : 'over'}</p>}
+            {target === null ? <p className="calendar-target-empty">Target not set</p> : remaining !== null && <p>{nutritionText(Math.abs(remaining), '', calories.estimated)} {remaining >= 0 ? 'remaining' : 'over'}</p>}
             {target !== null && target > 0 && calories.value !== null && calories.complete && <div className="calorie-track" role="progressbar" aria-label="Calories eaten compared with target" aria-valuemin={0} aria-valuemax={target} aria-valuenow={Math.min(calories.value, target)} aria-valuetext={`${calories.estimated ? 'About ' : ''}${number(calories.value)} of ${number(target)} kcal`}><span style={{ width: `${Math.min(100, calories.value / target * 100)}%` }} /></div>}
           </section>
         </div>
@@ -434,9 +440,9 @@ export function CalendarPage() {
 
       {data.day?.status === 'completed' && <StatusMessage tone="info">This completed day is read-only.</StatusMessage>}
       <section className="today-meals" aria-label="Meals">
-        {mealGroups.length === 0 ? <div className="calendar-day-empty">
-          <h2>{localDate > today ? 'No meals planned' : 'No meals logged'}</h2>
-        </div> :
+        {mealGroups.length === 0 ? (localDate > today && <div className="calendar-day-empty">
+          <h2>No meals planned</h2>
+        </div>) :
         <div className="today-sections">{mealGroups.map(({ section, label, items }) => <section className="today-meal-section" key={section} aria-labelledby={label ? `calendar-${section}` : undefined} aria-label={label ? undefined : 'Meals'}>
           {label && <h3 className="calendar-meal-section-heading" id={`calendar-${section}`}>{label}</h3>}
           <ul className="today-item-list">{groupDayItems(items).map((group) => {

@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select extensions.plan(12);
+select extensions.plan(18);
 
 insert into auth.users (id,aud,role,email,encrypted_password,email_confirmed_at) values
   ('d1410000-0000-4000-8000-000000000001','authenticated','authenticated','library-owner@test.invalid','',now()),
@@ -55,11 +55,30 @@ select extensions.is((select (item->>'selected_amount')::numeric from public.lis
   cross join lateral jsonb_array_elements(items) as item where item->'eaten_snapshot'->>'name'='Rolled oats'),
   0.5::numeric,'editing the named meal does not change logged portions');
 
+insert into public.hidden_recent_meals(user_id,history_key)
+select auth.uid(),history_key from source_recent;
+select extensions.is((select count(*) from public.list_recent_calendar_meals()),1::bigint,
+  'a hidden meal is filtered before pagination');
+select extensions.is((select count(*) from public.list_recent_calendar_meals(p_history_key=>(select history_key from source_recent))),0::bigint,
+  'hidden meals do not appear when looked up for reuse');
+select extensions.is((select count(*) from public.day_items where user_id=auth.uid()
+  and local_date=(select local_date from source_recent) and state='eaten'),2::bigint,
+  'hiding a recent meal keeps every logged food in Calendar');
+
 select set_config('request.jwt.claim.sub','d1410000-0000-4000-8000-000000000002',true);
 select extensions.is((select count(*) from public.list_recent_calendar_meals()),0::bigint,'other accounts cannot read recent meals');
+select extensions.is((select count(*) from public.hidden_recent_meals),0::bigint,'other accounts cannot read hidden meals');
 select extensions.throws_ok(
   $$select public.archive_saved_meal(gen_random_uuid(),(result->>'id')::uuid,2) from named_meal$$,
   '40001','The saved meal has changed','other accounts cannot remove saved meals');
+
+select set_config('request.jwt.claim.sub','d1410000-0000-4000-8000-000000000001',true);
+delete from public.hidden_recent_meals where history_key=(select history_key from source_recent);
+select extensions.is((select count(*) from public.list_recent_calendar_meals()),2::bigint,
+  'undo makes the recent meal available again');
+select public.archive_saved_meal(gen_random_uuid(),(result->>'id')::uuid,2) from named_meal;
+select extensions.is((select count(*) from public.list_recent_calendar_meals()),1::bigint,
+  'removing a named meal does not bring its recent copy back to the Library');
 
 select * from extensions.finish();
 rollback;

@@ -9,11 +9,13 @@ function IncompleteMark() {
   return <> <CircleDashed size={12} className="nutrition-incomplete-mark" aria-hidden="true" /><span className="visually-hidden">, incomplete</span></>;
 }
 
-export function CalendarMealCard({ state: mealState, label, recurring, calories, caloriesIncomplete, foods, metrics, expanded, onToggle, onDelete, onDuplicate, onEdit, onAttachFoods, onMarkEaten, markEatenLabel = 'Mark as eaten', onMarkNotEaten, busy = false }: {
+export function CalendarMealCard({ state: mealState, title: entryTitle, label, recurring, calories, caloriesIncomplete, foods, metrics, expanded, onToggle, onDelete, onDuplicate, onEdit, onAttachFoods, onMarkEaten, markEatenLabel = 'Mark as eaten', onMarkNotEaten, busy = false, libraryActions }: {
   state: 'Eaten' | 'Planned' | 'Partly eaten'; label?: string | null; recurring?: boolean; calories: string; caloriesIncomplete?: boolean; foods: CalendarMealFood[]; metrics: CalendarMealMetric[];
+  title?: string;
   expanded: boolean; onToggle: () => void;
   onEdit?: (tile: HTMLButtonElement) => void; onAttachFoods?: (tile: HTMLButtonElement) => void; markEatenLabel?: string;
   onDelete?: () => void; onDuplicate?: () => void; onMarkEaten?: (tile: HTMLButtonElement) => void; onMarkNotEaten?: () => void; busy?: boolean;
+  libraryActions?: { kind: 'Food' | 'Meal'; onUse: () => void; onEdit: () => void; onRemove?: () => void };
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const tileRef = useRef<HTMLButtonElement>(null);
@@ -23,7 +25,7 @@ export function CalendarMealCard({ state: mealState, label, recurring, calories,
   const menuTrigger = useRef<HTMLButtonElement>(null);
   const duplicateAction = useRef<HTMLButtonElement>(null);
   const names = foods.slice(0, 3).map((food) => food.name).join(', ');
-  const title = names + (foods.length > 3 ? ` +${foods.length - 3}` : '');
+  const title = entryTitle ?? names + (foods.length > 3 ? ` +${foods.length - 3}` : '');
 
   useLayoutEffect(() => {
     if (!expanded) return;
@@ -75,17 +77,19 @@ export function CalendarMealCard({ state: mealState, label, recurring, calories,
     return () => document.removeEventListener('pointerdown', closeOutside);
   }, [menuOpen]);
 
-  const stateClass = mealState === 'Eaten' ? 'is-eaten' : mealState === 'Planned' ? 'is-planned' : 'is-partial';
+  const stateClass = libraryActions ? 'is-library' : mealState === 'Eaten' ? 'is-eaten' : mealState === 'Planned' ? 'is-planned' : 'is-partial';
 
   return <>
-    <button ref={tileRef} type="button" className={`calendar-meal-tile ${stateClass}${expanded ? ' is-open' : ''}`} aria-label={`Open ${title}, ${calories} kcal${caloriesIncomplete ? ', incomplete' : ''}, ${mealState}${recurring ? ', repeating' : ''}`} aria-haspopup="dialog" aria-expanded={expanded} onClick={() => { setMenuOpen(false); onToggle(); }}>
-      <span className="calendar-meal-tile-top"><strong>{title}</strong><span className="calendar-meal-tile-calories"><span>{calories} <small>kcal</small>{caloriesIncomplete && <IncompleteMark />}</span><small className={`calendar-meal-tile-state ${stateClass}`}>{recurring ? 'Repeating · ' : ''}{mealState}</small></span></span>
+    <button ref={tileRef} type="button" className={`calendar-meal-tile ${stateClass}${expanded ? ' is-open' : ''}`} aria-label={`Open ${title}, ${calories} kcal${caloriesIncomplete ? ', incomplete' : ''}, ${libraryActions?.kind ?? mealState}${!libraryActions && recurring ? ', repeating' : ''}`} aria-haspopup="dialog" aria-expanded={expanded} onClick={() => { setMenuOpen(false); onToggle(); }}>
+      <span className="calendar-meal-tile-top"><strong>{title}</strong><span className="calendar-meal-tile-calories"><span>{calories} <small>kcal</small>{caloriesIncomplete && <IncompleteMark />}</span><small className={`calendar-meal-tile-state ${stateClass}`}>{libraryActions ? libraryActions.kind : `${recurring ? 'Repeating · ' : ''}${mealState}`}</small></span></span>
       <span className="calendar-meal-tile-bottom">{metrics.slice(0, 3).map((metric) => <span key={metric.label}>{metric.label} <strong>{metric.value}</strong>{metric.incomplete && <IncompleteMark />}</span>)}</span>
     </button>
-    {expanded && createPortal(<div ref={panelRef} role="dialog" aria-label={`Meal: ${title}`} aria-modal="false" className="calendar-meal-floating">
+    {expanded && createPortal(<div ref={panelRef} role="dialog" aria-label={`${libraryActions?.kind ?? 'Meal'}: ${title}`} aria-modal="false" className={`calendar-meal-floating${libraryActions ? ' is-library-detail' : ''}`}>
       <div className="calendar-meal-floating-toolbar">
-        {onEdit && <button type="button" className="icon-button" aria-label="Edit meal" disabled={busy} onClick={() => { if (tileRef.current) onEdit(tileRef.current); }}><Pencil size={17} /></button>}
-        {onDelete && <button type="button" className="icon-button calendar-meal-delete" aria-label="Delete meal" disabled={busy} onClick={onDelete}><Trash2 size={17} /></button>}
+        {libraryActions && <button type="button" className="icon-button" aria-label={`Edit ${libraryActions.kind.toLowerCase()}`} disabled={busy} onClick={libraryActions.onEdit}><Pencil size={17} /></button>}
+        {libraryActions?.onRemove && <button type="button" className="icon-button calendar-meal-delete" aria-label={`Remove ${libraryActions.kind.toLowerCase()}`} disabled={busy} onClick={libraryActions.onRemove}><Trash2 size={17} /></button>}
+        {!libraryActions && onEdit && <button type="button" className="icon-button" aria-label="Edit meal" disabled={busy} onClick={() => { if (tileRef.current) onEdit(tileRef.current); }}><Pencil size={17} /></button>}
+        {!libraryActions && onDelete && <button type="button" className="icon-button calendar-meal-delete" aria-label="Delete meal" disabled={busy} onClick={onDelete}><Trash2 size={17} /></button>}
         {onDuplicate && <div className="calendar-meal-menu-anchor" ref={menuRef}>
           <button ref={menuTrigger} type="button" className="icon-button" aria-label="More meal actions" aria-expanded={menuOpen} disabled={busy} onClick={() => setMenuOpen((open) => !open)}><EllipsisVertical size={19} /></button>
           {menuOpen && <div className="calendar-meal-action-menu">
@@ -98,15 +102,16 @@ export function CalendarMealCard({ state: mealState, label, recurring, calories,
       </div>
       <div className="calendar-meal-floating-body">
         <div className="calendar-meal-floating-title"><h2>{title}</h2><strong>{calories} <small>kcal</small>{caloriesIncomplete && <IncompleteMark />}</strong></div>
-        <p className="calendar-meal-floating-state">{[label, recurring && 'Repeating', mealState].filter(Boolean).join(' · ')}</p>
-        {!onAttachFoods && <ul className="calendar-meal-food-preview" aria-label="Foods in this meal">{foods.map((food) => <li key={food.key}>
+        <p className="calendar-meal-floating-state">{libraryActions ? [libraryActions.kind, libraryActions.kind === 'Food' && foods[0]?.brand, libraryActions.kind === 'Food' && foods[0]?.portion].filter(Boolean).join(' · ') : [label, recurring && 'Repeating', mealState].filter(Boolean).join(' · ')}</p>
+        {!onAttachFoods && libraryActions?.kind !== 'Food' && <ul className="calendar-meal-food-preview" aria-label="Foods in this meal">{foods.map((food) => <li key={food.key}>
             <details className="calendar-meal-food-accordion"><summary><span className="calendar-meal-food-name"><strong>{food.name}</strong>{food.brand && <small>{food.brand}</small>}</span><span className="calendar-meal-food-portion">{food.portion}</span><span className="calendar-meal-food-calories">{food.calories} <small>kcal</small></span></summary>
             {food.ingredients && food.ingredients.length > 0 ? <ul className="calendar-meal-ingredient-preview">{food.ingredients.map((ingredient) => <li key={ingredient.key}><div><strong>{ingredient.name}</strong><small>{ingredient.portion}</small><span>{ingredient.calories} kcal</span></div>{ingredient.metrics.length > 0 && <dl className="calendar-meal-food-attributes">{ingredient.metrics.map((metric) => <div key={metric.label}><dt>{metric.label}</dt><dd>{metric.value}</dd></div>)}</dl>}</li>)}</ul>
               : food.metrics && food.metrics.length > 0 && <dl className="calendar-meal-food-attributes">{food.metrics.map((metric) => <div key={metric.label}><dt>{metric.label}</dt><dd>{metric.value}{metric.incomplete && <IncompleteMark />}</dd></div>)}</dl>}
           </details></li>)}</ul>}
-        {metrics.length > 0 && <section className="calendar-meal-nutrition" aria-labelledby="calendar-meal-nutrition-heading"><h3 id="calendar-meal-nutrition-heading">Meal nutrition</h3><dl>{metrics.map((metric) => <div key={metric.label}><dt>{metric.label}</dt><dd>{metric.value}{metric.incomplete && <IncompleteMark />}</dd></div>)}</dl></section>}
+        {metrics.length > 0 && <section className="calendar-meal-nutrition" aria-labelledby="calendar-meal-nutrition-heading"><h3 id="calendar-meal-nutrition-heading">{libraryActions?.kind === 'Food' ? 'Nutrition' : 'Meal nutrition'}</h3><dl>{metrics.map((metric) => <div key={metric.label}><dt>{metric.label}</dt><dd>{metric.value}{metric.incomplete && <IncompleteMark />}</dd></div>)}</dl></section>}
       </div>
-      {(onMarkEaten || onMarkNotEaten || onAttachFoods) && <div className="calendar-meal-floating-footer">
+      {(onMarkEaten || onMarkNotEaten || onAttachFoods || libraryActions) && <div className="calendar-meal-floating-footer">
+        {libraryActions && <button type="button" className="primary-button" disabled={busy} onClick={libraryActions.onUse}><Check size={16} />Use</button>}
         {onAttachFoods && <button type="button" className="secondary-button" disabled={busy} onClick={() => { if (tileRef.current) onAttachFoods(tileRef.current); }}>Add foods</button>}
         {onMarkNotEaten && <button type="button" className="secondary-button" disabled={busy} onClick={onMarkNotEaten}><Undo2 size={16} />Mark as not eaten</button>}
         {onMarkEaten && <button type="button" className="primary-button" disabled={busy} onClick={() => { if (tileRef.current) onMarkEaten(tileRef.current); }}><Check size={16} />{markEatenLabel}</button>}

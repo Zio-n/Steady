@@ -36,9 +36,12 @@ export async function loadFoodLibrary(userId: string, search = '', offset = 0, p
   if (!supabase) throw new DataError('Connect Supabase before loading saved foods.', 'configuration');
   const trimmedSearch = search.trim();
   let query = supabase.from('foods').select('*', { count: 'exact' }).eq('user_id', userId).is('archived_at', null);
-  if (trimmedSearch) query = query.or(`name.ilike.%${escapeLike(trimmedSearch)}%,brand.ilike.%${escapeLike(trimmedSearch)}%`);
+  if (trimmedSearch) {
+    const pattern = escapeLike(trimmedSearch).replace(/[\\"]/g, '\\$&');
+    query = query.or(`name.ilike."%${pattern}%",brand.ilike."%${pattern}%"`);
+  }
   query = sort === 'recent' ? query.order('created_at', { ascending: false }) : query.order('name', { ascending: true });
-  const { data: foods, error, count } = await query.range(offset, offset + pageSize - 1);
+  const { data: foods, error, count } = await query.order('id').range(offset, offset + pageSize - 1);
   if (error) throw toDataError(error);
   if (foods.length === 0) return { entries: [] as FoodWithNutrients[], hasMore: false };
 

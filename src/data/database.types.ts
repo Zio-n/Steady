@@ -374,6 +374,11 @@ isOneToOne: false
                   Relationships: [
 
                   ]
+                },"hidden_recent_meals": {
+                  Row: { history_key: string; user_id: string }
+                  Insert: { history_key: string; user_id: string }
+                  Update: { history_key?: string; user_id?: string }
+                  Relationships: []
                 },"user_food_portion_preferences": {
                   Row: {
                     "amount": number,"food_id": string,"food_kind": string,"unit": string,"updated_at": string,"user_id": string
